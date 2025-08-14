@@ -1,0 +1,9 @@
+Django>=5.0
+celery[redis]>=5.3
+django-celery-beat>=2.5
+django-redis>=5.4
+playwright==1.54.0
+psycopg2-binary>=2.9
+django-unfold
+python-dotenv
+asyncio

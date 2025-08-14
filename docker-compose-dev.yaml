@@ -1,0 +1,109 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: leadmqr_redis
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    volumes: [redis_data:/data]
+    networks: [leadmqr_net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: leadmqr_rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+    ports:
+      - "5672:5672"     # брокер для celery
+      - "15672:15672"   # RabbitMQ UI
+    volumes: [rabbitmq_data:/var/lib/rabbitmq/]
+    networks: [leadmqr_net]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    container_name: leadmqr_web
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports: ["8000:8000"]
+    networks: [leadmqr_net]
+    command: >
+      python manage.py runserver 0.0.0.0:8000
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    container_name: leadmqr_celery_beat
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [leadmqr_net]
+    command: >
+      celery -A leadmqr beat -l info -S django_celery_beat.schedulers:DatabaseScheduler
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    container_name: leadmqr_celery_worker
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - state_data:/app/.data
+      - ./playwright_profile:/app/playwright_profile:rw   # ← профиль с хоста
+      - ./debug:/app/debug
+    shm_size: "1g"
+    env_file: [.env]
+    environment:
+      - TT_USER_DATA_DIR=/app/playwright_profile          # ← путь совпадает с монтированием
+      - TT_STATE_PATH=/app/.data/.tt_state.json
+      - TT_HEADLESS=true
+      - TT_LOCALE=en-US
+      - TT_TIMEZONE_ID=America/New_York
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [leadmqr_net]
+    command: >
+      celery -A leadmqr worker -Q crawler -l info -c 1
+
+networks:
+  leadmqr_net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  rabbitmq_data:
+  state_data:
+  playwright_cache:
+  playwright_profile:
