@@ -11,7 +11,10 @@ from playwright_bot.state_store import StateStore
 from playwright_bot.thumbtack_bot import ThumbTackBot
 
 
-async def run_single_pass(headless=None) -> Dict[str, Any]:
+
+proxy_url = {"server": SETTINGS.proxy_url} if getattr(SETTINGS, "proxy_url", "") else None
+
+async def run_single_pass() -> Dict[str, Any]:
     store = StateStore(
         path=getattr(SETTINGS, "state_path", ".tt_state.json"),
         cooldown_hours=getattr(SETTINGS, "cooldown_hours", 0)
@@ -29,11 +32,22 @@ async def run_single_pass(headless=None) -> Dict[str, Any]:
         # )
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=SETTINGS.user_data_dir,   # <- ключевая строка
-            headless=headless,
+            headless=False,
             slow_mo=SETTINGS.slow_mo,
             args=getattr(SETTINGS, "chromium_args", ["--no-sandbox"]),
+            proxy=proxy_url,
             viewport=None,
         )
+        # --- DEBUG VPN IP ---
+        try:
+            p = await context.new_page()
+            await p.goto("https://api.ipify.org?format=text", wait_until="domcontentloaded", timeout=20000)
+            ip_txt = (await p.text_content("body")) or ""
+            print("[DEBUG] Playwright outgoing IP:", ip_txt.strip())
+            await p.close()
+        except Exception as e:
+            print("[DEBUG] IP check failed:", e)
+        # --- end DEBUG ---
         print("PROFILE USED:", SETTINGS.user_data_dir, "exists:", os.path.isdir(SETTINGS.user_data_dir))
         try:
             state = await context.storage_state()
@@ -52,7 +66,7 @@ async def run_single_pass(headless=None) -> Dict[str, Any]:
 
         bot = ThumbTackBot(page)
 
-        await bot.open_leads()
+        # await bot.open_leads()
 
         # leads = await bot.list_new_leads()
         # if not leads:

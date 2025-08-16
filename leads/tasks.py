@@ -5,6 +5,7 @@ from typing import Dict, Any, List
 from django.core.cache import cache
 from playwright.async_api import async_playwright
 
+from leadmqr.celery import app
 from leads.models import FoundPhone, ProcessedLead
 from playwright_bot.workflows import run_single_pass
 
@@ -19,12 +20,12 @@ from playwright_bot.workflows import run_single_pass
 LOCK_KEY = "scan_leads_lock"
 LOCK_TTL = 60 * 10
 
-@shared_task()
+@app.task(queue="crawler")
 def poll_leads() -> Dict[str, Any]:
     if not cache.add(LOCK_KEY, "1", LOCK_TTL):
         return {"ok": False, "skipped": "locked"}
     try:
-        result: Dict[str, Any] = asyncio.run(run_single_pass(headless=True))
+        result: Dict[str, Any] = asyncio.run(run_single_pass())
 
         for p in result.get("phones", []) or []:
             lk, ph = p.get("lead_key"), p.get("phone")

@@ -72,20 +72,16 @@ services:
   celery_worker:
     build:
       context: .
-      dockerfile: Dockerfile.playwright
+      dockerfile: docker/celery/Dockerfile.celery_worker
     container_name: leadmqr_celery_worker
     restart: unless-stopped
-    volumes:
-      - .:/app
-      - state_data:/app/.data
-      - ./playwright_profile:/app/playwright_profile:rw   # ← профиль с хоста
-      - ./debug:/app/debug
-    shm_size: "1g"
+    shm_size: "1gb"
     env_file: [.env]
     environment:
-      - TT_USER_DATA_DIR=/app/playwright_profile          # ← путь совпадает с монтированием
+      # можно оставить, но они уже прописаны в Dockerfile как ENV
+      - TT_USER_DATA_DIR=/app/playwright_profile
       - TT_STATE_PATH=/app/.data/.tt_state.json
-      - TT_HEADLESS=true
+      - TT_HEADLESS=false
       - TT_LOCALE=en-US
       - TT_TIMEZONE_ID=America/New_York
     depends_on:
@@ -94,8 +90,12 @@ services:
       redis:
         condition: service_healthy
     networks: [leadmqr_net]
-    command: >
-      celery -A leadmqr worker -Q crawler -l info -c 1
+    volumes:
+      - .:/app
+      - state_data:/app/.data
+      - ./playwright_profile:/app/playwright_profile:rw
+      - ./debug:/app/debug
+
 
 networks:
   leadmqr_net:
