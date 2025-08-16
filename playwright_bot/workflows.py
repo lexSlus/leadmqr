@@ -2,7 +2,6 @@ import json
 import os
 import pathlib
 import time
-from pathlib import Path
 from typing import Dict, Any
 from playwright.async_api import async_playwright
 from playwright_bot.browser import BrowserManager
@@ -11,8 +10,6 @@ from playwright_bot.state_store import StateStore
 from playwright_bot.thumbtack_bot import ThumbTackBot
 
 
-
-proxy_url = {"server": SETTINGS.proxy_url} if getattr(SETTINGS, "proxy_url", "") else None
 
 async def run_single_pass() -> Dict[str, Any]:
     store = StateStore(
@@ -35,7 +32,6 @@ async def run_single_pass() -> Dict[str, Any]:
             headless=False,
             slow_mo=SETTINGS.slow_mo,
             args=getattr(SETTINGS, "chromium_args", ["--no-sandbox"]),
-            proxy=proxy_url,
             viewport=None,
         )
         # --- DEBUG VPN IP ---

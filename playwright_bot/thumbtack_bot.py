@@ -221,12 +221,12 @@ class ThumbTackBot:
             lead_key = self.lead_key_from_url(href)
 
             # анти-спам по тредам
-            if store is not None and store.was_thread_seen(href):
+            if store is not None and store.should_skip_thread(href):
                 results.append({
                     "index": i,
                     "href": href,
                     "lead_key": lead_key,  # 👈 добавили
-                    "phone": None,
+                    "phone": store.phone_for_thread(href),
                     "status": "skipped_already_seen"
                 })
                 continue

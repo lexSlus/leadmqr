@@ -52,3 +52,27 @@ class StateStore:
         if phone:
             self.data["phones_by_thread"][href] = phone
         self._save()
+
+    def phone_for_thread(self, href: str) -> Optional[str]:
+        return self.data["phones_by_thread"].get(href)
+
+    def should_skip_thread(self, href: str) -> bool:
+        """
+        True если тред завершён (телефон уже найден),
+        либо если только что пытались (и cooldown ещё не истёк).
+        """
+        # 1) уже найден телефон — всегда пропускаем
+        if self.phone_for_thread(href):
+            return True
+
+        # 2) телефона нет, но недавно уже пробовали
+        last_ts = self.data["seen_threads"].get(href)
+        if not last_ts:
+            return False  # ещё не видели — пробуем
+
+        if self.cooldown <= 0:
+            # 0 => НЕ троттлим повторные попытки: пробуем каждый запуск,
+            # пока не найдём телефон
+            return False
+
+        return (time.time() - last_ts) < self.cooldown
