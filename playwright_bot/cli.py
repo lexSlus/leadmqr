@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -33,25 +34,25 @@ from playwright_bot.workflows import run_single_pass
 USER_DATA_DIR = "./playwright_profile"
 
 
-async def main():
-    Path(USER_DATA_DIR).mkdir(parents=True, exist_ok=True)
-    async with async_playwright() as p:
-        ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
-            headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--start-maximized",
-            ],
-            viewport=None,
-        )
-        page = await ctx.new_page()
-        await page.goto("https://www.thumbtack.com/", wait_until="load")
-        print("\n>>> В открывшемся окне залогинься и пройди капчу.")
-        input(">>> Когда всё готово, нажми Enter здесь...")
-        await ctx.storage_state(path=os.path.join(USER_DATA_DIR, "storage_state.json"))
-        print(f">>> Профиль сохранён в: {USER_DATA_DIR}")
-        await ctx.close()
+# async def main():
+#     Path(USER_DATA_DIR).mkdir(parents=True, exist_ok=True)
+#     async with async_playwright() as p:
+#         ctx = await p.chromium.launch_persistent_context(
+#             user_data_dir=USER_DATA_DIR,
+#             headless=False,
+#             args=[
+#                 "--disable-blink-features=AutomationControlled",
+#                 "--start-maximized",
+#             ],
+#             viewport=None,
+#         )
+#         page = await ctx.new_page()
+#         await page.goto("https://www.thumbtack.com/", wait_until="load")
+#         print("\n>>> В открывшемся окне залогинься и пройди капчу.")
+#         input(">>> Когда всё готово, нажми Enter здесь...")
+#         await ctx.storage_state(path=os.path.join(USER_DATA_DIR, "storage_state.json"))
+#         print(f">>> Профиль сохранён в: {USER_DATA_DIR}")
+#         await ctx.close()
 
 # async def main():
 #         result =  await run_single_pass(headless=False)
@@ -59,8 +60,24 @@ async def main():
 #         return result
 
 
+os.environ["EMAIL"] = "your_email@example.com"
+os.environ["PASSWORD"] = "your_password_here"
+os.environ["BASE_URL"] = "https://www.thumbtack.com"
+os.environ["LEADS_PATH"] = "/leads"
 
+# хранилище профиля/сессии локально
+os.environ["USER_DATA_DIR"] = "./.data/tt_profile"
+os.environ["STORAGE_STATE"] = "./.data/state.json"
 
+# браузер
+os.environ["HEADLESS"] = "False"
+os.environ["SLOW_MO"] = "150"
+
+async def main():
+    result = await run_single_pass()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
+    # гарантируем что папка есть
+    os.makedirs("./.data/tt_profile", exist_ok=True)
     asyncio.run(main())

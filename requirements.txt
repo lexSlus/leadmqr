@@ -5,5 +5,9 @@ django-redis>=5.4
 playwright==1.54.0
 psycopg2-binary>=2.9
 django-unfold
-python-dotenv
-asyncio
+python-dotenv~=1.1.1
+asyncio~=4.0.0
+unfold~=1.2.3
+djangorestframework~=3.16.1
+requests~=2.32.4
+dotenv~=0.9.9

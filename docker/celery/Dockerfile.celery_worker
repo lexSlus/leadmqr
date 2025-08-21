@@ -27,7 +27,7 @@ RUN mkdir -p /app/playwright_profile /app/.data /app/debug \
  && chown -R 1000:1000 /app
 
 # Лёгкий entrypoint: чистит локи профиля и затем выполняет CMD
-COPY docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
+COPY docker/celery/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
 RUN chmod +x /usr/local/bin/worker-entrypoint.sh
 
 ENTRYPOINT ["dumb-init","--","worker-entrypoint.sh"]

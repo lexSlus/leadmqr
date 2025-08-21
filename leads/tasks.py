@@ -5,6 +5,7 @@ from typing import Dict, Any, List
 from django.core.cache import cache
 from playwright.async_api import async_playwright
 
+from ai_calls.tasks import  enqueue_ai_call
 from leadmqr.celery import app
 from leads.models import FoundPhone, ProcessedLead
 from playwright_bot.workflows import run_single_pass
@@ -30,8 +31,8 @@ def poll_leads() -> Dict[str, Any]:
         for p in result.get("phones", []) or []:
             lk, ph = p.get("lead_key"), p.get("phone")
             if lk and ph:
-                FoundPhone.objects.get_or_create(lead_key=lk, phone=ph)
-
+                phone_obj, _ = FoundPhone.objects.get_or_create(lead_key=lk, phone=ph)
+                enqueue_ai_call.delay(str(phone_obj.id))
         for item in result.get("sent", []) or []:
             lk = item.get("lead_key")
             if lk and (item.get("status") or "").startswith("sent"):
@@ -40,3 +41,4 @@ def poll_leads() -> Dict[str, Any]:
         return result
     finally:
         cache.delete(LOCK_KEY)
+

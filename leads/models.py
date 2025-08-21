@@ -2,6 +2,7 @@
 from django.db import models
 
 
+
 class FoundPhone(models.Model):
     lead_key = models.CharField(max_length=64, db_index=True)  # md5 хэш URL лида
     phone = models.CharField(max_length=32, db_index=True)     # телефон в чистом виде
