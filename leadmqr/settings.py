@@ -39,7 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'leads',
-    'django_celery_beat'
+    'django_celery_beat',
+    'ai_calls',
+    'rest_framework',
 
 ]
 
