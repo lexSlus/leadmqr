@@ -1,21 +1,13 @@
 import asyncio
 
-from celery import shared_task
-from typing import Dict, Any, List
+from typing import Dict, Any
 from django.core.cache import cache
-from playwright.async_api import async_playwright
 
-from ai_calls.tasks import  enqueue_ai_call
+from ai_calls.tasks import enqueue_ai_call
+
 from leadmqr.celery import app
 from leads.models import FoundPhone, ProcessedLead
 from playwright_bot.workflows import run_single_pass
-
-
-# @shared_task
-# def poll_leads():
-#     result = run_until_leads()
-#     print(f"[BOT RESULT] {result}")
-#     return result
 
 
 LOCK_KEY = "scan_leads_lock"
