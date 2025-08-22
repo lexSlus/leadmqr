@@ -96,6 +96,26 @@ services:
       - ./playwright_profile:/app/playwright_profile:rw
       - ./debug:/app/debug
 
+  celery_worker_ai:
+    build:
+      context: .
+      dockerfile: docker/celery/Dockerfile.celery_worker
+    container_name: leadmqr_ai_worker
+    restart: unless-stopped
+    shm_size: "1gb"
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [leadmqr_net]
+    volumes:
+      - .:/app
+      - state_data:/app/.data
+      - ./debug:/app/debug
+    entrypoint: []
+    command: ["celery","-A","leadmqr","worker","-Q","ai_calls","-l","INFO","-c","4","-n","ai_calls@%h"]
 
 networks:
   leadmqr_net:
