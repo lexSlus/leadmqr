@@ -1,0 +1,22 @@
+2025/08/22-16:41:29.273 188046a Creating DB /Users/lex/Documents/leadmqr/playwright_bot/.data/tt_profile/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb since it was missing.
+2025/08/22-16:41:29.276 188046a Reusing MANIFEST /Users/lex/Documents/leadmqr/playwright_bot/.data/tt_profile/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/08/22-16:41:29.279 188046e Manual compaction at level-0 from '\x00\x01\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x02\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/08/22-16:41:29.281 188046e Level-0 table #5: started
+2025/08/22-16:41:29.282 188046e Level-0 table #5: 891 bytes OK
+2025/08/22-16:41:29.284 188046e Delete type=0 #3
+2025/08/22-16:41:29.284 188046c Manual compaction at level-0 from '\x00\x02\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x03\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/08/22-16:41:29.603 188046a Level-0 table #7: started
+2025/08/22-16:41:29.604 188046a Level-0 table #7: 1656 bytes OK
+2025/08/22-16:41:29.605 188046a Delete type=0 #4
+2025/08/22-16:41:29.605 188046a Manual compaction at level-0 from '\x00\x04\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x05\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/08/22-16:41:36.302 188046a Level-0 table #9: started
+2025/08/22-16:41:36.304 188046a Level-0 table #9: 666 bytes OK
+2025/08/22-16:41:36.305 188046a Delete type=0 #6
+2025/08/22-16:41:36.305 188046a Manual compaction at level-0 from '\x00\x05\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x06\x00\x00\x00' @ 0 : 0; will stop at '\x00\x05\x00\x00\x05' @ 116 : 1
+2025/08/22-16:41:36.305 188046a Compacting 1@0 + 1@1 files
+2025/08/22-16:41:36.306 188046a Generated table #10@0: 44 keys, 1237 bytes
+2025/08/22-16:41:36.306 188046a Compacted 1@0 + 1@1 files => 1237 bytes
+2025/08/22-16:41:36.307 188046a compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/08/22-16:41:36.307 188046a Delete type=2 #9
+2025/08/22-16:41:36.308 188046a Manual compaction at level-0 from '\x00\x05\x00\x00\x05' @ 116 : 1 .. '\x00\x06\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/08/22-16:41:36.311 188046e Manual compaction at level-0 from '\x00\x05\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x06\x00\x00\x00' @ 0 : 0; will stop at (end)
