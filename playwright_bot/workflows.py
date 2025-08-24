@@ -1,10 +1,8 @@
 import json
 import os
 import pathlib
-import time
 from typing import Dict, Any
 from playwright.async_api import async_playwright
-from playwright_bot.browser import BrowserManager
 from playwright_bot.config import SETTINGS
 from playwright_bot.state_store import StateStore
 from playwright_bot.thumbtack_bot import ThumbTackBot
@@ -55,39 +53,39 @@ async def run_single_pass() -> Dict[str, Any]:
         await page.goto("https://www.thumbtack.com/pro-inbox/", wait_until="domcontentloaded")
         # await page.screenshot(path="/app/debug/inbox.png", full_page=True)
         print("AFTER GOTO:", page.url)
-        if "login" in page.url.lower():
-            raise RuntimeError("Session not applied (redirect to login)")
 
         bot = ThumbTackBot(page)
 
         await bot.open_leads()
 
         leads = await bot.list_new_leads()
+        print(f"[DEBUG] found leads: {len(leads)}")
+
         if not leads:
-            # await browser.close()
             return {
                 "ok": True,
                 "leads_processed": 0,
                 "messages_processed": 0,
                 "sent": [],
                 "phones": [],
+                "message": "No leads"
             }
         sent = []
         for lead in leads:
             try:
                 await bot.open_lead_details(lead)
-                lead_url = bot.page.url
-                lead_key = bot.lead_key_from_url(lead_url)
-                if store.was_lead_sent(lead_key):
-                    sent.append({"index": lead["index"], "status": "skipped_already_sent", "lead_key": lead_key})
-                else:
-                    await bot.send_template_message()
-                    store.mark_lead_sent(lead_key)
-                    sent.append({"index": lead["index"], "status": "sent", "lead_key": lead_key})
+                lead_key = lead["lead_key"]
+                # if store.was_lead_sent(lead_key):
+                #     sent.append({"index": lead["index"], "status": "skipped_already_sent", "lead_key": lead_key})
+                # else:
+                await bot.send_template_message(dry_run=True)
+                # store.mark_lead_sent(lead_key)
+                sent.append({"index": lead["index"], "status": "sent", "lead_key": lead_key})
             except Exception as e:
                 sent.append({"index": lead["index"], "status": f"error: {e}"})
             finally:
                 await bot.open_leads()
+
         phones = await bot.extract_phones_from_all_threads(store=store)
         # await browser.close()
         return {

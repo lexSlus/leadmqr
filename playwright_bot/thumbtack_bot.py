@@ -11,6 +11,11 @@ from playwright_bot.tt_selectors import *
 from playwright_bot.config import SETTINGS
 
 
+RE_REPLY = re.compile(r"^\s*reply\s*$", re.I)
+RE_SEND = re.compile(r"^\s*send\s*$", re.I)
+MSG_PLACEHOLDER = "Answer any questions and let them know next steps."
+
+
 
 
 class ThumbTackBot:
@@ -76,64 +81,149 @@ class ThumbTackBot:
                 except PWTimeoutError:
                     pass
 
-        # --- DEBUG ---
-        from pathlib import Path
-        import os
-        debug_dir = "/app/debug"
-        os.makedirs(debug_dir, exist_ok=True)
 
-        # Сохраняем скриншот
-        await self.page.screenshot(path=f"{debug_dir}/after_open_leads.png", full_page=True)
-
-        # Сохраняем HTML для анализа
-        html_path = Path(debug_dir) / "after_open_leads.html"
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(await self.page.content())
-
-        # Логируем URL
-        print("[DEBUG open_leads] Current URL:", self.page.url)
-        # --- END DEBUG ---
 
     # ---------- Поиск новых лидов ----------
-    async def list_new_leads(self) -> List[Dict[str, Any]]:
-        """
-        Возвращает список "объектов-лидов". На первом этапе можно найти карточки с кнопкой View Details.
-        Позже можно расширить: вытащить id, заголовок, время, бюджет и т.д.
-        """
-        cards = []
-        btns = self.page.get_by_role(VIEW_DETAILS["role"], name=VIEW_DETAILS["name"])
-        count = await btns.count()
+    # async def list_new_leads(self) -> List[Dict[str, Any]]:
+    #     """
+    #     Возвращает список "объектов-лидов". На первом этапе можно найти карточки с кнопкой View Details.
+    #     Позже можно расширить: вытащить id, заголовок, время, бюджет и т.д.
+    #     """
+    #     cards = []
+    #     btns = self.page.get_by_role(VIEW_DETAILS["role"], name=VIEW_DETAILS["name"])
+    #     count = await btns.count()
+    #     for i in range(count):
+    #         # Выше можно найти ближайший контейнер, собрать текст/атрибуты
+    #         cards.append({"index": i, "has_view": True})
+    #     return cards
+
+
+    async def list_new_leads(self) -> List[Dict]:
+        results: List[Dict] = []
+
+        # Дождаться подгрузки сети (если долго рисуют карточки)
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception:
+            pass
+
+        # Если карточки вдруг в iframe — выберем фрейм с доменом thumbtack
+        ctx = self.page
+        for fr in self.page.frames:
+            if "thumbtack.com" in fr.url and fr is not self.page:
+                ctx = fr
+                break
+
+        # Все карточки-лиды представлены как <a href="/pro-leads/...">,
+        # фильтруем те, в которых встречается "View details"
+        anchors = ctx.locator("a[href^='/pro-leads/']")
+        # подстраховки по тексту кнопки
+        view_text = re.compile(r"view\s*details", re.I)
+        cards = anchors.filter(has=ctx.get_by_text(view_text))
+
+        # дождёмся хотя бы первой, если уже есть
+        try:
+            await cards.first.wait_for(state="visible", timeout=5000)
+        except Exception:
+            pass
+
+        count = await cards.count()
         for i in range(count):
-            # Выше можно найти ближайший контейнер, собрать текст/атрибуты
-            cards.append({"index": i, "has_view": True})
-        return cards
+            a = cards.nth(i)
+            href = await a.get_attribute("href") or ""
+
+            # Имя и категория в твоём HTML шли подряд одинаковым классом
+            title_nodes = a.locator("._3VGbA-aOhTlHiUmcFEBQs5")
+            title_cnt = await title_nodes.count()
+
+            name = await title_nodes.nth(0).inner_text() if title_cnt > 0 else ""
+            category = await title_nodes.nth(1).inner_text() if title_cnt > 1 else ""
+
+            # Локация — по твоему фрагменту после svg + .flex-auto ...
+            loc_node = a.locator("svg + .flex-auto ._3iW9xguFAEzNAGlyAo5Hw7").first
+            location = await loc_node.inner_text() if await loc_node.count() > 0 else ""
+
+            item = {
+                "index": i,
+                "href": href,
+                "lead_key": self.lead_key_from_url(href),
+                "name": name.strip(),
+                "category": category.strip(),
+                "location": location.strip(),
+                "has_view": True,
+            }
+            results.append(item)
+
+        # Короткий вывод, чтобы глазами видеть что нашлось
+        print(f"[leads] found: {len(results)}")
+        for r in results:
+            print(f"[lead] {r['href']} | {r.get('name', '')} | {r.get('category', '')} | {r.get('location', '')}")
+
+        return results
 
 
-    async def open_lead_details(self, lead: Dict[str, Any]):
-        btn = self.page.get_by_role(VIEW_DETAILS["role"], name=VIEW_DETAILS["name"]).nth(lead["index"])
-        await btn.scroll_into_view_if_needed()
-        await btn.wait_for(state="visible", timeout=5000)
-        await btn.click()
+    # async def open_lead_details(self, lead: Dict[str, Any]):
+    #     btn = self.page.get_by_role(VIEW_DETAILS["role"], name=VIEW_DETAILS["name"]).nth(lead["index"])
+    #     await btn.scroll_into_view_if_needed()
+    #     await btn.wait_for(state="visible", timeout=5000)
+    #     await btn.click()
+    #     await self.page.wait_for_load_state("networkidle", timeout=20000)
+
+    async def open_lead_details(self, lead: dict):
+        """
+        Открывает страницу деталей лида.
+        1) Если есть href — идём напрямую (предпочтительно).
+        2) Иначе кликаем по кнопке "View details" в карточке по индексу.
+        """
+        href = (lead or {}).get("href")
+        if href:
+            url = href if href.startswith("http") else f"{SETTINGS.base_url}{href}"
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        else:
+            # fallback: твой рабочий клик по кнопке
+            btn = self.page.get_by_role("button", name=re.compile(r"view\s*details", re.I)).nth(lead["index"])
+            await btn.scroll_into_view_if_needed()
+            await btn.wait_for(state="visible", timeout=5000)
+            await btn.click()
+
+        # дождаться полной подгрузки деталки
         await self.page.wait_for_load_state("networkidle", timeout=20000)
 
 
-    async def send_template_message(self, text: Optional[str] = None):
+    async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
-        reply = self.page.get_by_role(REPLY_BTN["role"], name=REPLY_BTN["name"])
-        if await reply.count():
-            await reply.first.scroll_into_view_if_needed()
-            await reply.first.wait_for(state="visible", timeout=5000)
-            await reply.first.click()
-        # поле ввода
-        box = self.page.get_by_placeholder(MESSAGE_INPUT_PLACEHOLDER)
-        if await box.count() == 0:
-            box = self.page.locator("[contenteditable='true']")
-        await box.first.wait_for(state="visible", timeout=5000)
-        await box.first.fill(text)
 
-        send_btn = self.page.get_by_role(SEND_BTN["role"], name=SEND_BTN["name"])
-        await send_btn.first.wait_for(state="visible", timeout=5000)
+        # 1) Клик по Reply (форма без этого не рендерится)
+        reply_btn = self.page.get_by_role("button", name=RE_REPLY)
+        if await reply_btn.count() == 0:
+            # подстраховка, если get_by_role не сработал
+            reply_btn = self.page.locator("button", has_text=RE_REPLY)
+        await reply_btn.first.wait_for(state="visible", timeout=8_000)
+        await reply_btn.first.scroll_into_view_if_needed()
+        await reply_btn.first.click()
+        await self.page.wait_for_timeout(200)
+
+        # 2) Ждём появления textarea и заполняем
+        box = self.page.get_by_placeholder(MSG_PLACEHOLDER)
+        if await box.count() == 0:
+            box = self.page.locator("textarea[placeholder]")
+        await box.first.wait_for(state="visible", timeout=8_000)
+        await box.first.fill(text)
+        if dry_run:
+            print(f"[DRY RUN] message filled with: {text!r}, but not sent")
+            return
+        send_btn = self.page.get_by_role("button", name=RE_SEND)
+        if await send_btn.count() == 0:
+            send_btn = self.page.locator("button", has_text=RE_SEND)
+        await send_btn.first.wait_for(state="visible", timeout=8_000)
+        await send_btn.first.scroll_into_view_if_needed()
         await send_btn.first.click()
+
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=6_000)
+        except Exception:
+            pass
+
 
     # 0) удобный заход в список Messages
     async def open_messages(self):

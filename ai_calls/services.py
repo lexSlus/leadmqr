@@ -1,7 +1,10 @@
 from typing import Dict, Any, Optional
 from django.db import transaction
+
+from leads.models import FoundPhone
 from .client import VocalyClient
 from .models import AICall
+
 
 
 class AICallService:

@@ -40,8 +40,9 @@ class VocalyClient:
     def create_call(self, agent_id: str, from_number: str, to_number: str, variables: dict = None, call_settings: dict = None):
         endpoint = f"agent/1f385dfd-d4d6-4453-a048-dcca68dbfb92/call"
         payload = {
-            "fromPhoneNumber": '12678553731',
-            "toPhoneNumber": '19402863397',
+            "fromPhoneNumber": '+12678553731',
+            # "toPhoneNumber": '+17867779396',
+            "toPhoneNumber": '+17867779345',
             "settings": {
                 "audioSettings": {
                     "VoiceID": "TcFVFGKruwp5AI74cZL1"
@@ -52,4 +53,5 @@ class VocalyClient:
                 "name": "Volodymyr"
             }
         }
-        return self.do_request(endpoint, method="POST", payload=payload)
+        response = self.do_request(endpoint, method="POST", payload=payload)
+        return response
