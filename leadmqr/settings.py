@@ -18,6 +18,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 API_KEY='9c07d595-2bf3-49a9-9f37-c652f5f811ea'
+AGENT_ID = "1f385dfd-d4d6-4453-a048-dcca68dbfb92"
+FROM_PHONE_NUMBER = '+12678553731'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -170,8 +172,6 @@ LOGGING = {
     },
     "loggers": {
         "django": {"handlers": ["console"], "level": "WARNING"},
-        "payments": {"handlers": ["console"], "level": "INFO", "propagate": False},
-        # добавь свой:
         "playwright_bot": {"handlers": ["console"], "level": "INFO", "propagate": False},
         # полезно и для Celery:
         "celery": {"handlers": ["console"], "level": "INFO", "propagate": False},

@@ -22,8 +22,13 @@ def poll_leads() -> Dict[str, Any]:
 
         for p in result.get("phones", []) or []:
             lk, ph = p.get("lead_key"), p.get("phone")
+            vars_item = p.get("variables", {})
             if lk and ph:
-                phone_obj, _ = FoundPhone.objects.get_or_create(lead_key=lk, phone=ph)
+                phone_obj, _ = FoundPhone.objects.get_or_create(
+                    lead_key=lk,
+                    phone=ph,
+                    defaults={"variables": vars_item}
+                )
                 enqueue_ai_call.delay(str(phone_obj.id))
         for item in result.get("sent", []) or []:
             lk = item.get("lead_key")

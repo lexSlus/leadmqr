@@ -1,7 +1,6 @@
 from typing import Dict, Any, Optional
 from django.db import transaction
-
-from leads.models import FoundPhone
+from django.conf import settings
 from .client import VocalyClient
 from .models import AICall
 
@@ -30,13 +29,12 @@ class AICallService:
         return call
 
 
-    def start_call(self, call: AICall)-> Dict[str, Any]:
-        from_phone_number = call.from_phone or None
+    def start_call(self, call: AICall, variables: dict | None = None)-> Dict[str, Any]:
         to_phone_number = call.to_phone
-        variables = call.variables or {}
+        variables = variables or {}
 
         payload = {
-            "fromPhoneNumber": from_phone_number,
+            "fromPhoneNumber": settings.FROM_PHONE_NUMBER,
             "toPhoneNumber": to_phone_number,
             "variables": variables,
             "settings": {
@@ -50,13 +48,11 @@ class AICallService:
             call.save(update_fields=["status","request_payload","updated_at"])
 
         resp = self.client.create_call(
-            agent_id=call.agent_id,
-            from_number=from_phone_number,
+            agent_id=settings.AGENT_ID,
+            from_number=settings.FROM_PHONE_NUMBER,
             to_number=to_phone_number,
             variables=variables,
-            call_settings={
-                "timeZone": call.user_timezone,
-            }
+
         )
         call.provider_call_id = str(resp.get("id") or resp.get("providerCallID") or "")
         call.response_payload = resp

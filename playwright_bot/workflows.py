@@ -75,18 +75,32 @@ async def run_single_pass() -> Dict[str, Any]:
             try:
                 await bot.open_lead_details(lead)
                 lead_key = lead["lead_key"]
+                variables = {
+                    "lead_id": lead_key,
+                    "lead_url": f"{SETTINGS.base_url}{lead['href']}",
+                    "name": lead.get("name") or "",
+                    "category": lead.get("category") or "",
+                    "location": lead.get("location") or "",
+                    "source": "thumbtack",
+                }
                 # if store.was_lead_sent(lead_key):
                 #     sent.append({"index": lead["index"], "status": "skipped_already_sent", "lead_key": lead_key})
                 # else:
                 await bot.send_template_message(dry_run=True)
                 # store.mark_lead_sent(lead_key)
-                sent.append({"index": lead["index"], "status": "sent", "lead_key": lead_key})
+                sent.append({
+                    "index": lead["index"],
+                    "status": "sent",
+                    "lead_key": lead_key,
+                    "variables": variables,
+                })
             except Exception as e:
                 sent.append({"index": lead["index"], "status": f"error: {e}"})
             finally:
                 await bot.open_leads()
 
-        phones = await bot.extract_phones_from_all_threads(store=store)
+        # phones = await bot.extract_phones_from_all_threads(store=store)
+        phones = await bot.extract_phones_from_all_threads()
         # await browser.close()
         return {
             "ok": True,
@@ -94,6 +108,7 @@ async def run_single_pass() -> Dict[str, Any]:
             "messages_processed": len(phones),
             "sent": sent,
             "phones": phones,
+            "variables": [s.get("variables") for s in sent if "variables" in s],
         }
 
 

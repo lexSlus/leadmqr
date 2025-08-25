@@ -16,7 +16,7 @@ def enqueue_ai_call(found_phone_id: str):
     )
     if not call:
         logger.error("AI call skipped")
-        return {"skepped": True}
-    resp = ai_service.start_call(call)
+        return {"skipped": True}
+    resp = ai_service.start_call(call, variables=phone_obj.variables)
     logger.info("AI call started %s", resp)
     return resp

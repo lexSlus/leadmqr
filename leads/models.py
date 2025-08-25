@@ -7,6 +7,7 @@ class FoundPhone(models.Model):
     lead_key = models.CharField(max_length=64, db_index=True)  # md5 хэш URL лида
     phone = models.CharField(max_length=32, db_index=True)     # телефон в чистом виде
     created_at = models.DateTimeField(auto_now_add=True)
+    variables = models.JSONField(default=dict, blank=True)
 
     class Meta:
         unique_together = ("lead_key", "phone")
