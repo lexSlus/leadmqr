@@ -12,20 +12,22 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+from dotenv import load_dotenv
 
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-API_KEY='9c07d595-2bf3-49a9-9f37-c652f5f811ea'
-AGENT_ID = "1f385dfd-d4d6-4453-a048-dcca68dbfb92"
-FROM_PHONE_NUMBER = '+12678553731'
+VOCALAI_API_KEY= os.getenv('VOCALAI_API_KEY')
+AGENT_ID = os.getenv('AGENT_ID')
+FROM_PHONE_NUMBER = os.getenv('FROM_PHONE_NUMBER')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-)q-lbe19_-8u4qawcdlrx3f5l6==$!2u8n)mx!q56+ke157zik'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -83,13 +85,23 @@ WSGI_APPLICATION = 'leadmqr.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("POSTGRES_DB", "leadmqr"),
+        "USER": os.getenv("POSTGRES_USER", "postgres"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "1111"),
+        "HOST": os.getenv("POSTGRES_HOST", "db"),
+        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "CONN_MAX_AGE": 60,
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -133,7 +145,7 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-CELERY_BROKER_URL = "amqp://guest:guest@localhost:5672//"
+CELERY_BROKER_URL = f"amqp://{os.getenv('RABBITMQ_USER')}:{os.getenv('RABBITMQ_PASS')}@{os.getenv('RABBITMQ_HOST')}:{os.getenv('RABBITMQ_PORT')}//"
 CELERY_RESULT_BACKEND = "rpc://"
 
 # базовые опции celery
@@ -143,22 +155,29 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 60 * 10
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 9
-
-from datetime import timedelta
 CELERY_BEAT_SCHEDULE = {
-    "poll-leads-every-30s": {
-        "task": "leads.tasks.poll_leads",
-        "schedule": 30.0,
+    # "poll-leads-every-30s": {
+    #     "task": "leads.tasks.poll_leads",
+    #     "schedule": 30.0,
+    # },
+    "ensure-runner-alive-every-10s": {
+        "task": "leads.tasks.ensure_runner_alive",
+        "schedule": 10.0,
     },
 }
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://redis:6379/0",
+        "LOCATION": f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}/{os.getenv('REDIS_DB')}",
         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
     }
 }
+
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
+REDIS_PORT = os.getenv('REDIS_PORT', '6379')
+REDIS_DB   = os.getenv('REDIS_DB', '0')
+REDIS_URL  = os.getenv('REDIS_URL', f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
 
 
 LOGGING = {

@@ -13,7 +13,6 @@ class Settings:
     email: str = os.getenv("TT_EMAIL", "wkononov@gmail.com")
     password: str = os.getenv("TT_PASSWORD", "Oleg@2025")
     storage_state: str = os.getenv("TT_STORAGE_STATE", "state.json")
-
     user_data_dir: str = os.getenv("TT_USER_DATA_DIR", "./playwright_profile")
     headless: bool = os.getenv("TT_HEADLESS", "True")
     slow_mo: int = int(os.getenv("TT_SLOW_MO", "100"))

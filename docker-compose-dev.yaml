@@ -1,6 +1,26 @@
 version: '3.9'
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: leadmqr_db
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks: [leadmqr_net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   redis:
     image: redis:7-alpine
     container_name: leadmqr_redis
@@ -46,6 +66,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db:
+        condition: service_healthy
     ports: ["8000:8000"]
     networks: [leadmqr_net]
     command: >
@@ -67,7 +89,7 @@ services:
         condition: service_healthy
     networks: [leadmqr_net]
     command: >
-      celery -A leadmqr beat -l info -S django_celery_beat.schedulers:DatabaseScheduler
+      celery -A leadmqr beat -l info
 
   celery_worker:
     build:
@@ -89,6 +111,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db:
+        condition: service_healthy
     networks: [leadmqr_net]
     volumes:
       - .:/app
@@ -109,6 +133,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db:
+        condition: service_healthy
     networks: [leadmqr_net]
     volumes:
       - .:/app
@@ -122,6 +148,7 @@ networks:
     driver: bridge
 
 volumes:
+  postgres_data:
   redis_data:
   rabbitmq_data:
   state_data:

@@ -22,6 +22,15 @@ class ThumbTackBot:
     def __init__(self, page):
         self.page = page
 
+    async def page_is_ok(self) -> bool:
+        try:
+            if self.page.is_closed():
+                return False
+            state = await self.page.evaluate("document.readyState")
+            return state in ("interactive", "complete")
+        except Exception:
+            return False
+
 
     def lead_key_from_url(self, url: str) -> str:
         return hashlib.md5((url or "").encode("utf-8")).hexdigest()
@@ -223,7 +232,6 @@ class ThumbTackBot:
             await self.page.wait_for_load_state("networkidle", timeout=6_000)
         except Exception:
             pass
-
 
     # 0) удобный заход в список Messages
     async def open_messages(self):

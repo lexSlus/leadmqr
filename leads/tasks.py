@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from typing import Dict, Any
 from django.core.cache import cache
@@ -7,6 +8,7 @@ from ai_calls.tasks import enqueue_ai_call
 
 from leadmqr.celery import app
 from leads.models import FoundPhone, ProcessedLead
+from playwright_bot.playwright_runner import start_runner_in_background
 from playwright_bot.workflows import run_single_pass
 
 
@@ -38,4 +40,19 @@ def poll_leads() -> Dict[str, Any]:
         return result
     finally:
         cache.delete(LOCK_KEY)
+
+
+logger = logging.getLogger("playwright_bot")
+
+@app.task(queue="crawler")
+def ensure_runner_alive():
+    """
+    Лёгкая периодическая задача. Если раннер не запущен в этом процессе — поднимаем.
+    """
+    started = start_runner_in_background()
+    if started:
+        logger.info("ensure_runner_alive: LeadRunner started")
+        return {"started": True}
+    logger.info("ensure_runner_alive: already running")
+    return {"alive": True}
 

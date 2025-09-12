@@ -3,6 +3,9 @@ import requests
 from django.conf import settings
 
 
+import logging
+logger = logging.getLogger('playwright_bot')
+
 class VocalyClient:
     def __init__(self):
         self.api_key = f'{settings.API_KEY}'
@@ -42,4 +45,5 @@ class VocalyClient:
         }
 
         response = self.do_request(endpoint, method="POST", payload=payload)
+        logger.info(f'call{response}')
         return response
