@@ -1,50 +1,13 @@
 import asyncio
 import logging
-import threading
-
-from typing import Dict, Any
-
 from celery import shared_task
-from django.core.cache import cache
-
 from ai_calls.tasks import enqueue_ai_call
-
-from leadmqr.celery import app
 from leads.models import FoundPhone, ProcessedLead
 from playwright_bot.playwright_runner import LeadRunner
-# from playwright_bot.workflows import run_single_pass
+
 
 logger = logging.getLogger("playwright_bot")
 
-
-# LOCK_KEY = "scan_leads_lock"
-# LOCK_TTL = 60 * 10
-
-# @app.task(queue="crawler")
-# def poll_leads() -> Dict[str, Any]:
-#     if not cache.add(LOCK_KEY, "1", LOCK_TTL):
-#         return {"ok": False, "skipped": "locked"}
-#     try:
-#         result: Dict[str, Any] = asyncio.run(run_single_pass())
-#
-#         for p in result.get("phones", []) or []:
-#             lk, ph = p.get("lead_key"), p.get("phone")
-#             vars_item = p.get("variables", {})
-#             if lk and ph:
-#                 phone_obj, _ = FoundPhone.objects.get_or_create(
-#                     lead_key=lk,
-#                     phone=ph,
-#                     defaults={"variables": vars_item}
-#                 )
-#                 enqueue_ai_call.delay(str(phone_obj.id))
-#         for item in result.get("sent", []) or []:
-#             lk = item.get("lead_key")
-#             if lk and (item.get("status") or "").startswith("sent"):
-#                 ProcessedLead.objects.get_or_create(key=lk)
-#
-#         return result
-#     finally:
-#         cache.delete(LOCK_KEY)
 
 _runner = None
 _runner_loop_id = None
@@ -66,8 +29,8 @@ async def _get_runner() -> LeadRunner:
         _runner_loop_id = loop_id
     return _runner
 
-@shared_task(queue="lead_proc")
-def process_single_lead_task(lead: dict, need_phone: bool = True) -> dict:
+@shared_task(name="leads.tasks.process_lead_task", queue="lead_proc")
+def process_single_lead_task(lead: dict) -> dict:
     """
     Целерий-таска: обработка ОДНОГО лида.
     - Использует LeadRunner для отправки шаблона Thumbtack
@@ -77,7 +40,7 @@ def process_single_lead_task(lead: dict, need_phone: bool = True) -> dict:
 
     async def _run():
         runner = await _get_runner()
-        result = await runner.process_lead(lead, need_phone=need_phone)
+        result = await runner.process_lead(lead)
 
         lk = result.get("lead_key")
         ph = result.get("phone")

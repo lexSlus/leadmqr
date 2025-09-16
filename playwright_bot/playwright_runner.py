@@ -83,7 +83,7 @@ class LeadRunner:
         finally:
             await inbox.close()
 
-    async def process_lead(self, lead: Dict[str, Any], *, need_phone: bool = True) -> Dict[str, Any]:
+    async def process_lead(self, lead: Dict[str, Any]) -> Dict[str, Any]:
         """
         Обработка ОДНОГО лида:
           - открываем список /pro-leads,
@@ -102,7 +102,7 @@ class LeadRunner:
 
         await self.bot.open_leads()
         await self.bot.open_lead_details(lead)
-        await self.bot.send_template_message(dry_run=False)
+        await self.bot.send_template_message(dry_run=True)
 
         result: Dict[str, Any] = {
             "ok": True,
@@ -116,7 +116,7 @@ class LeadRunner:
             },
         }
         logger.info(f"result - {result}")
-        if need_phone:
-            result["phone"] = await self._extract_phone_for_lead(lk)
 
+        result["phone"] = await self._extract_phone_for_lead(lk)
+        logger.info("process_lead: phone for %s -> %s", lk, result["phone"] or "NONE")
         return result

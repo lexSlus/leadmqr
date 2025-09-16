@@ -11,6 +11,7 @@ from playwright_bot.tt_selectors import *
 from playwright_bot.config import SETTINGS
 
 
+PHONE_TEXT_RE = re.compile(r"(click|show).*(phone|number)", re.I)
 RE_REPLY = re.compile(r"^\s*reply\s*$", re.I)
 RE_SEND = re.compile(r"^\s*send\s*$", re.I)
 MSG_PLACEHOLDER = "Answer any questions and let them know next steps."
@@ -67,7 +68,7 @@ class ThumbTackBot:
     async def open_leads(self):
         # Открываем страницу лидов напрямую
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=60000)
-
+        logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
         # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
         if "login" in self.page.url.lower():
             await self.login_if_needed()
@@ -80,7 +81,6 @@ class ThumbTackBot:
         except PWTimeoutError:
             pass
 
-        # Если по какой-то причине мы всё ещё не на /pro-leads — кликаем по пункту меню
         if not self.page.url.rstrip("/").endswith("pro-leads"):
             leads_link = self.page.get_by_role("link", name=re.compile(r"^Leads$", re.I))
             if await leads_link.count():
@@ -89,14 +89,17 @@ class ThumbTackBot:
                     await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
                 except PWTimeoutError:
                     pass
+        else:
+            logger.info("[open_leads] Уже на странице /pro-leads, URL: %s", self.page.url)
 
 
     async def list_new_leads(self) -> List[Dict]:
         results: List[Dict] = []
         try:
+            logger.info("[list_new_leads] URL before wait: %s", self.page.url)
             await self.page.wait_for_load_state("networkidle", timeout=8000)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("[list_new_leads] wait_for_load_state failed: %s", e)
         ctx = self.page
         for fr in self.page.frames:
             if "thumbtack.com" in fr.url and fr is not self.page:
@@ -108,9 +111,11 @@ class ThumbTackBot:
         try:
             await cards.first.wait_for(state="visible", timeout=5000)
         except Exception:
-            pass
+            logger.debug("[list_new_leads] no visible cards within timeout")
 
         count = await cards.count()
+        logger.info("[list_new_leads] cards with 'view details': %d", count)
+
         for i in range(count):
             a = cards.nth(i)
             href = await a.get_attribute("href") or ""
@@ -138,6 +143,7 @@ class ThumbTackBot:
 
         return results
 
+
     async def open_lead_details(self, lead: dict):
         """
         Открывает страницу деталей лида.
@@ -156,38 +162,92 @@ class ThumbTackBot:
 
         await self.page.wait_for_load_state("networkidle", timeout=20000)
 
-
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
-        # 1) Клик по Reply (форма без этого не рендерится)
-        reply_btn = self.page.get_by_role("button", name=RE_REPLY)
-        if await reply_btn.count() == 0:
-            # подстраховка, если get_by_role не сработал
-            reply_btn = self.page.locator("button", has_text=RE_REPLY)
-        await reply_btn.first.wait_for(state="visible", timeout=8_000)
-        await reply_btn.first.scroll_into_view_if_needed()
-        await reply_btn.first.click()
-        await self.page.wait_for_timeout(200)
-
-        box = self.page.get_by_placeholder(MSG_PLACEHOLDER)
-        if await box.count() == 0:
-            box = self.page.locator("textarea[placeholder]")
-        await box.first.wait_for(state="visible", timeout=8_000)
-        await box.first.fill(text)
-        if dry_run:
-            print(f"[DRY RUN] message filled with: {text!r}, but not sent")
-            return
-        send_btn = self.page.get_by_role("button", name=RE_SEND)
-        if await send_btn.count() == 0:
-            send_btn = self.page.locator("button", has_text=RE_SEND)
-        await send_btn.first.wait_for(state="visible", timeout=8_000)
-        await send_btn.first.scroll_into_view_if_needed()
-        await send_btn.first.click()
-
         try:
-            await self.page.wait_for_load_state("networkidle", timeout=6_000)
+            await self.page.wait_for_url(re.compile(r"/pro-leads/\d+"), timeout=8_000)
         except Exception:
             pass
+
+        ctx = self.page
+        try:
+            for fr in self.page.frames:
+                if fr is not self.page and await fr.locator("textarea, button").count() > 0:
+                    ctx = fr
+                    break
+        except Exception:
+            pass
+
+        # Если textarea уже есть — обойдёмся без Reply
+        box = ctx.get_by_placeholder(MSG_PLACEHOLDER)
+        if await box.count() == 0:
+            box = ctx.locator("textarea[placeholder]")
+        if await box.count() == 0:
+            # Ищем кнопку Reply разными способами
+            candidates = [
+                ctx.get_by_role("button", name=RE_REPLY),
+                ctx.locator("button:has-text('Reply')"),
+                ctx.locator("button").filter(has_text=re.compile(r"\breply\b", re.I)),
+            ]
+            reply_btn = None
+            for loc in candidates:
+                try:
+                    if await loc.count() == 0:
+                        continue
+                    btn = loc.first
+                    # Сначала дождёмся, что элемент прикреплён
+                    await btn.wait_for(state="attached", timeout=6_000)
+                    # затем сделаем его видимым/прокрутим
+                    try:
+                        await btn.wait_for(state="visible", timeout=6_000)
+                    except Exception:
+                        pass
+                    await btn.scroll_into_view_if_needed()
+                    reply_btn = btn
+                    break
+                except Exception:
+                    continue
+
+            if reply_btn:
+                try:
+                    await reply_btn.click(timeout=6_000)
+                except Exception:
+                    try:
+                        await reply_btn.click(timeout=4_000, force=True)
+                    except Exception:
+                        # не получилось кликнуть — дальше попробуем textarea
+                        pass
+
+            # после клика попробуем снова найти textarea
+            box = ctx.get_by_placeholder(MSG_PLACEHOLDER)
+            if await box.count() == 0:
+                box = ctx.locator("textarea[placeholder]")
+
+        # теперь работаем с textarea, если она есть
+        try:
+            await box.first.wait_for(state="visible", timeout=10_000)
+        except Exception:
+            # форма так и не появилась — выходим без падения
+            return
+
+        await box.first.fill(text)
+
+        if dry_run:
+            return
+        send_btn = ctx.get_by_role("button", name=RE_SEND)
+        if await send_btn.count() == 0:
+            send_btn = ctx.locator("button:has-text(/^\\s*Send\\s*$/i)")
+        try:
+            await send_btn.first.wait_for(state="visible", timeout=10_000)
+            await send_btn.first.scroll_into_view_if_needed()
+            await send_btn.first.click()
+            try:
+                await self.page.wait_for_load_state("networkidle", timeout=6_000)
+            except Exception:
+                pass
+        except Exception:
+            # не смогли нажать — мягко выходим
+            return
 
 
     async def open_messages(self):
@@ -214,51 +274,84 @@ class ThumbTackBot:
     def _threads(self):
         return self.page.locator("a[href^='/pro-inbox/messages']")
 
-
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
-
         logger.info("Начинаем поиск телефона в текущем треде. URL: %s", self.page.url)
-        show_phone = self.page.get_by_role(SHOW_PHONE["role"], name=SHOW_PHONE["name"])
-        logger.info("Кнопка number show phone: %s", show_phone.count())
 
-        if await show_phone.count():
-            logger.info(f"Найдено {show_phone.count()} ссылок с tel:")
+        # 1) Небольшое ожидание тишины сети
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            pass
+
+        # 2) Ищем кнопку «show phone» несколькими способами
+        #   2.1 role-based по имени (самый чистый)
+        show_btn = self.page.get_by_role("button", name=PHONE_TEXT_RE)
+
+        #   2.2 :has(<p> с нужным текстом)
+        if await show_btn.count() == 0:
+            show_btn = self.page.locator("button:has(p:has-text(/(click|show).*(phone|number)/i))")
+
+        #   2.3 fallback: любой button, содержащий слова phone/number
+        if await show_btn.count() == 0:
+            show_btn = self.page.locator("button").filter(has_text=re.compile(r"(phone|number)", re.I))
+
+        btn_count = await show_btn.count()
+        logger.info("Кнопок 'show phone' найдено: %d", btn_count)
+
+        if btn_count > 0:
+            b = show_btn.first
             try:
-                await show_phone.first.scroll_into_view_if_needed()
-                await show_phone.first.click()
-                logger.info("Клик по show phone выполнен")
+                await b.scroll_into_view_if_needed()
+                # Иногда класс типа `dn s_db` мешает видимости — сначала мягкий клик...
+                await b.click(timeout=8_000)
+                logger.info("Клик по 'show phone' выполнен (обычный).")
             except Exception as e:
-                logger.warning("Не удалось кликнуть show phone: %s", e)
+                logger.warning("Обычный клик не удался: %s — пробуем force=True", e)
+                try:
+                    await b.click(timeout=6_000, force=True)
+                    logger.info("Клик по 'show phone' выполнен (force=True).")
+                except Exception as e2:
+                    logger.error("Не удалось кликнуть 'show phone' даже force=True: %s", e2)
 
+        # 3) Ждём появления tel: ссылки и забираем номер
         tel_link = self.page.locator("a[href^='tel:']")
-        logger.info("Ссылок tel: найдено: %s", tel_link.count())
+        tel_count_before = await tel_link.count()
+        logger.info("Ссылок tel: найдено до ожидания: %d", tel_count_before)
 
-        if await tel_link.count() == 0:
+        if tel_count_before == 0:
             logger.info("Ждём появления tel:...")
             try:
-                await tel_link.first.wait_for(timeout=5000)
-                logger.info("После ожидания ссылок tel: %s", )
+                await tel_link.first.wait_for(state="attached", timeout=8_000)
+            except PWTimeoutError:
+                logger.warning("tel: ссылка не появилась за таймаут.")
+            except Exception as e:
+                logger.warning("Ожидание tel: упало: %s", e)
 
-            except Exception:
-                pass
+        tel_count_after = await tel_link.count()
+        logger.info("Ссылок tel: после ожидания: %d", tel_count_after)
 
-        if await tel_link.count():
-            raw = (await tel_link.first.get_attribute("href") or "").replace("tel:", "")
-            logger.info(f"Телефон найден: {raw}")
+        if tel_count_after > 0:
+            href = await tel_link.first.get_attribute("href") or ""
+            raw = href.replace("tel:", "").strip()
+            phone = re.sub(r"[^\d+]", "", raw)
+            logger.info("Телефон найден через tel:: %s (raw=%r)", phone, raw)
+            return phone or raw
 
-            return re.sub(r"[^\d+]", "", raw)
-
+        # 4) Фолбэк: ищем номер как текст по regex
         logger.info("Пробуем фолбэк по тексту (PHONE_REGEX)")
         node = self.page.get_by_text(re.compile(PHONE_REGEX))
-        logger.info("Нод по PHONE_REGEX: %s", node.count())
+        node_count = await node.count()
+        logger.info("Нод по PHONE_REGEX: %d", node_count)
 
-        if await node.count():
+        if node_count > 0:
             txt = (await node.first.text_content() or "").strip()
-            logger.info("Телефон найден текстом: txt=%r -> %r", txt)
+            phone = re.sub(r"[^\d+]", "", txt)
+            logger.info("Телефон найден текстом: %r -> %s", txt, phone or txt)
+            return phone or txt
 
-            return re.sub(r"[^\d+]", "", txt) or txt
-
+        logger.info("Телефон не найден.")
         return None
+
 
     async def extract_phones_from_all_threads(self, store=None) -> List[Dict[str, Any]]:
 

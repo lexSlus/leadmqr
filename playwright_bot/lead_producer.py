@@ -74,6 +74,7 @@ class LeadProducer:
             await self._hb()
 
             await self.bot.open_leads()
+            log.info("LeadProducer: opened %s (url=%s)", "/leads", self.page.url)
             leads: List[Dict[str, Any]] = await self.bot.list_new_leads()
             for lead in leads:
                 lk = lead.get("lead_key")
