@@ -91,6 +91,44 @@ services:
     command: >
       celery -A leadmqr beat -l info
 
+  celery_lead_producer:
+    build:
+      context: .
+      dockerfile: docker/celery/Dockerfile.celery_worker   # тот же образ, где Playwright установлен
+    container_name: leadmqr_lead_producer
+    restart: unless-stopped
+    shm_size: "1gb"
+    env_file: [ .env ]
+    environment:
+      # те же переменные, что у celery_worker — чтобы профиль/локаль совпадали
+      - TT_USER_DATA_DIR=/app/pw_profiles
+      - TT_STATE_PATH=/app/.data/.tt_state.json
+      - TT_HEADLESS=false
+      - TT_LOCALE=en-US
+      - TT_TIMEZONE_ID=America/New_York
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks: [ leadmqr_net ]
+    volumes:
+      - .:/app
+      - state_data:/app/.data
+      - ./pw_profiles:/app/pw_profiles:rw
+      - ./debug:/app/debug
+    command: >
+      bash -lc "xvfb-run -a --server-args='-screen 0 1920x1080x24'
+      python manage.py start_lead_runner"
+    healthcheck:
+      # healthcheck на Python: проверяем heartbeat-ключ в Redis
+      test: [ "CMD", "python", "-c", "import os,sys,redis; r=redis.Redis(host=os.getenv('REDIS_HOST','redis'), port=int(os.getenv('REDIS_PORT','6379')), decode_responses=True); sys.exit(0 if r.get('tt:runner:hb') else 1)" ]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+
   celery_worker:
     build:
       context: .
@@ -101,7 +139,7 @@ services:
     env_file: [.env]
     environment:
       # можно оставить, но они уже прописаны в Dockerfile как ENV
-      - TT_USER_DATA_DIR=/app/playwright_profile
+      - TT_USER_DATA_DIR=/app/pw_profiles
       - TT_STATE_PATH=/app/.data/.tt_state.json
       - TT_HEADLESS=false
       - TT_LOCALE=en-US
@@ -117,7 +155,7 @@ services:
     volumes:
       - .:/app
       - state_data:/app/.data
-      - ./playwright_profile:/app/playwright_profile:rw
+      - ./pw_profiles:/app/pw_profiles:rw
       - ./debug:/app/debug
 
   celery_worker_ai:

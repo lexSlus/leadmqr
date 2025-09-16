@@ -91,46 +91,20 @@ class ThumbTackBot:
                     pass
 
 
-
-    # ---------- Поиск новых лидов ----------
-    # async def list_new_leads(self) -> List[Dict[str, Any]]:
-    #     """
-    #     Возвращает список "объектов-лидов". На первом этапе можно найти карточки с кнопкой View Details.
-    #     Позже можно расширить: вытащить id, заголовок, время, бюджет и т.д.
-    #     """
-    #     cards = []
-    #     btns = self.page.get_by_role(VIEW_DETAILS["role"], name=VIEW_DETAILS["name"])
-    #     count = await btns.count()
-    #     for i in range(count):
-    #         # Выше можно найти ближайший контейнер, собрать текст/атрибуты
-    #         cards.append({"index": i, "has_view": True})
-    #     return cards
-
-
     async def list_new_leads(self) -> List[Dict]:
         results: List[Dict] = []
-
-        # Дождаться подгрузки сети (если долго рисуют карточки)
         try:
             await self.page.wait_for_load_state("networkidle", timeout=8000)
         except Exception:
             pass
-
-        # Если карточки вдруг в iframe — выберем фрейм с доменом thumbtack
         ctx = self.page
         for fr in self.page.frames:
             if "thumbtack.com" in fr.url and fr is not self.page:
                 ctx = fr
                 break
-
-        # Все карточки-лиды представлены как <a href="/pro-leads/...">,
-        # фильтруем те, в которых встречается "View details"
         anchors = ctx.locator("a[href^='/pro-leads/']")
-        # подстраховки по тексту кнопки
         view_text = re.compile(r"view\s*details", re.I)
         cards = anchors.filter(has=ctx.get_by_text(view_text))
-
-        # дождёмся хотя бы первой, если уже есть
         try:
             await cards.first.wait_for(state="visible", timeout=5000)
         except Exception:
@@ -140,15 +114,10 @@ class ThumbTackBot:
         for i in range(count):
             a = cards.nth(i)
             href = await a.get_attribute("href") or ""
-
-            # Имя и категория в твоём HTML шли подряд одинаковым классом
             title_nodes = a.locator("._3VGbA-aOhTlHiUmcFEBQs5")
             title_cnt = await title_nodes.count()
-
             name = await title_nodes.nth(0).inner_text() if title_cnt > 0 else ""
             category = await title_nodes.nth(1).inner_text() if title_cnt > 1 else ""
-
-            # Локация — по твоему фрагменту после svg + .flex-auto ...
             loc_node = a.locator("svg + .flex-auto ._3iW9xguFAEzNAGlyAo5Hw7").first
             location = await loc_node.inner_text() if await loc_node.count() > 0 else ""
 
@@ -163,20 +132,11 @@ class ThumbTackBot:
             }
             results.append(item)
 
-        # Короткий вывод, чтобы глазами видеть что нашлось
         print(f"[leads] found: {len(results)}")
         for r in results:
             print(f"[lead] {r['href']} | {r.get('name', '')} | {r.get('category', '')} | {r.get('location', '')}")
 
         return results
-
-
-    # async def open_lead_details(self, lead: Dict[str, Any]):
-    #     btn = self.page.get_by_role(VIEW_DETAILS["role"], name=VIEW_DETAILS["name"]).nth(lead["index"])
-    #     await btn.scroll_into_view_if_needed()
-    #     await btn.wait_for(state="visible", timeout=5000)
-    #     await btn.click()
-    #     await self.page.wait_for_load_state("networkidle", timeout=20000)
 
     async def open_lead_details(self, lead: dict):
         """
@@ -189,19 +149,16 @@ class ThumbTackBot:
             url = href if href.startswith("http") else f"{SETTINGS.base_url}{href}"
             await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
         else:
-            # fallback: твой рабочий клик по кнопке
             btn = self.page.get_by_role("button", name=re.compile(r"view\s*details", re.I)).nth(lead["index"])
             await btn.scroll_into_view_if_needed()
             await btn.wait_for(state="visible", timeout=5000)
             await btn.click()
 
-        # дождаться полной подгрузки деталки
         await self.page.wait_for_load_state("networkidle", timeout=20000)
 
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
-
         # 1) Клик по Reply (форма без этого не рендерится)
         reply_btn = self.page.get_by_role("button", name=RE_REPLY)
         if await reply_btn.count() == 0:
@@ -212,7 +169,6 @@ class ThumbTackBot:
         await reply_btn.first.click()
         await self.page.wait_for_timeout(200)
 
-        # 2) Ждём появления textarea и заполняем
         box = self.page.get_by_placeholder(MSG_PLACEHOLDER)
         if await box.count() == 0:
             box = self.page.locator("textarea[placeholder]")
@@ -233,7 +189,7 @@ class ThumbTackBot:
         except Exception:
             pass
 
-    # 0) удобный заход в список Messages
+
     async def open_messages(self):
         await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=60000)
         if "login" in self.page.url.lower():
@@ -244,6 +200,7 @@ class ThumbTackBot:
         except PWTimeoutError:
             pass
 
+
     async def _scroll_messages_list(self, steps: int = 5):
         panel = self.page.locator("main")
         for _ in range(steps):
@@ -253,13 +210,13 @@ class ThumbTackBot:
             except Exception:
                 break
 
-    # 1) вспомогательный локатор списка тредов
+
     def _threads(self):
         return self.page.locator("a[href^='/pro-inbox/messages']")
 
-    # 2) внутри открытого треда: показать номер и достать его
+
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
-        # клик "Click to show phone number"
+
         logger.info("Начинаем поиск телефона в текущем треде. URL: %s", self.page.url)
         show_phone = self.page.get_by_role(SHOW_PHONE["role"], name=SHOW_PHONE["name"])
         logger.info("Кнопка number show phone: %s", show_phone.count())
@@ -273,7 +230,6 @@ class ThumbTackBot:
             except Exception as e:
                 logger.warning("Не удалось кликнуть show phone: %s", e)
 
-        # ждать tel:
         tel_link = self.page.locator("a[href^='tel:']")
         logger.info("Ссылок tel: найдено: %s", tel_link.count())
 
@@ -292,7 +248,6 @@ class ThumbTackBot:
 
             return re.sub(r"[^\d+]", "", raw)
 
-        # fallback текстом
         logger.info("Пробуем фолбэк по тексту (PHONE_REGEX)")
         node = self.page.get_by_text(re.compile(PHONE_REGEX))
         logger.info("Нод по PHONE_REGEX: %s", node.count())
@@ -343,7 +298,7 @@ class ThumbTackBot:
             results.append({
                 "index": i,
                 "href": href,
-                "lead_key": lead_key,  # 👈 добавили
+                "lead_key": lead_key,
                 "phone": phone
             })
             await self.open_messages()

@@ -19,7 +19,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-VOCALAI_API_KEY= os.getenv('VOCALAI_API_KEY')
+API_KEY = os.getenv('VOCALAI_API_KEY')
 AGENT_ID = os.getenv('AGENT_ID')
 FROM_PHONE_NUMBER = os.getenv('FROM_PHONE_NUMBER')
 
@@ -155,16 +155,16 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 60 * 10
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 9
-CELERY_BEAT_SCHEDULE = {
-    # "poll-leads-every-30s": {
-    #     "task": "leads.tasks.poll_leads",
-    #     "schedule": 30.0,
-    # },
-    "ensure-runner-alive-every-10s": {
-        "task": "leads.tasks.ensure_runner_alive",
-        "schedule": 10.0,
-    },
-}
+# CELERY_BEAT_SCHEDULE = {
+#     # "poll-leads-every-30s": {
+#     #     "task": "leads.tasks.poll_leads",
+#     #     "schedule": 30.0,
+#     # },
+#     # "ensure-runner-alive-every-10s": {
+#     #     "task": "leads.tasks.ensure_runner_alive",
+#     #     "schedule": 10.0,
+#     # },
+# }
 
 CACHES = {
     "default": {
