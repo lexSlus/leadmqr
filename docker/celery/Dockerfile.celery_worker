@@ -34,4 +34,4 @@ ENTRYPOINT ["dumb-init","--","worker-entrypoint.sh"]
 
 # Xvfb + Celery worker
 CMD ["xvfb-run","-a","--server-args=-screen 0 1920x1080x24", \
-     "celery","-A","leadmqr","worker","-Q","lead_proc","-l","INFO","-c","3","-n","lead_proc@%h"]
+     "celery","-A","leadmqr","worker","-Q","lead_proc","-l","INFO","-c","2","-n","lead_proc@%h"]
