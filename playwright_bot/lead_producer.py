@@ -8,7 +8,8 @@ from celery import current_app as celery_app
 
 from playwright_bot.config import SETTINGS
 from playwright_bot.thumbtack_bot import ThumbTackBot
-from playwright_bot.utils import unique_user_data_dir
+from playwright_bot.utils import unique_user_data_dir, FlowTimer
+
 
 log = logging.getLogger("playwright_bot")
 
@@ -27,6 +28,7 @@ class LeadProducer:
         self.stop_evt = asyncio.Event()
         self.redis: Optional[aioredis.Redis] = None
         self.user_dir = unique_user_data_dir("producer")
+        self.flow = FlowTimer(redis_url=dj_settings.REDIS_URL)
 
     async def _acquire(self) -> bool:
         return bool(await self.redis.set(LEASE_KEY, "1", ex=LEASE_TTL, nx=True))
@@ -81,6 +83,8 @@ class LeadProducer:
                 if not lk:
                     log.warning("LeadProducer[%d]: skip lead without lead_key: %s", lead)
                     continue
+
+                self.flow.mark(lk, "detect")
 
                 if not await self.redis.set(f"lead:enq:{lk}", "1", ex=ENQ_TTL, nx=True):
                     continue

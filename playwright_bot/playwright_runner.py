@@ -61,10 +61,10 @@ class LeadRunner:
     async def _extract_phone_for_lead(self, lead_key: str) -> Optional[str]:
         rows = await self.bot.extract_phones_from_all_threads(store=None)
         for row in rows or []:
-            if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
-                phone = str(row["phone"]).strip()
-                logger.info("PHONE FOUND for %s -> %s", lead_key, phone)
-                return phone
+            # if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
+            phone = str(row["phone"]).strip()
+            logger.info("PHONE FOUND for %s -> %s", lead_key, phone)
+            return phone
 
         logger.info("PHONE NOT FOUND for %s (rows checked=%d)", lead_key, len(rows or []))
         return None

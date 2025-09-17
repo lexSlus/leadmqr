@@ -4,10 +4,10 @@ from celery import shared_task
 from ai_calls.tasks import enqueue_ai_call
 from leads.models import FoundPhone, ProcessedLead
 from playwright_bot.playwright_runner import LeadRunner
-
+from playwright_bot.utils import FlowTimer
 
 logger = logging.getLogger("playwright_bot")
-
+flow = FlowTimer()
 
 _runner = None
 _runner_loop_id = None
@@ -56,6 +56,7 @@ def process_single_lead_task(lead: dict) -> dict:
                 defaults={"variables": vars_item},
             )
             enqueue_ai_call.delay(str(phone_obj.id))
+            flow.mark(lk, "call_started")
             logger.info("Lead %s: телефон %s — отправлен на звонок", lk, ph)
         return result
 
