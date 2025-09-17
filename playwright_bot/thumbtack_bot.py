@@ -277,24 +277,16 @@ class ThumbTackBot:
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
         logger.info("Начинаем поиск телефона в текущем треде. URL: %s", self.page.url)
 
-        # 1) Небольшое ожидание тишины сети
         try:
             await self.page.wait_for_load_state("networkidle", timeout=10_000)
         except Exception:
             pass
 
-        # 2) Ищем кнопку «show phone» несколькими способами
-        #   2.1 role-based по имени (самый чистый)
         show_btn = self.page.get_by_role("button", name=PHONE_TEXT_RE)
-
-        #   2.2 :has(<p> с нужным текстом)
         if await show_btn.count() == 0:
             show_btn = self.page.locator("button:has(p:has-text(/(click|show).*(phone|number)/i))")
-
-        #   2.3 fallback: любой button, содержащий слова phone/number
         if await show_btn.count() == 0:
             show_btn = self.page.locator("button").filter(has_text=re.compile(r"(phone|number)", re.I))
-
         btn_count = await show_btn.count()
         logger.info("Кнопок 'show phone' найдено: %d", btn_count)
 
@@ -313,7 +305,6 @@ class ThumbTackBot:
                 except Exception as e2:
                     logger.error("Не удалось кликнуть 'show phone' даже force=True: %s", e2)
 
-        # 3) Ждём появления tel: ссылки и забираем номер
         tel_link = self.page.locator("a[href^='tel:']")
         tel_count_before = await tel_link.count()
         logger.info("Ссылок tel: найдено до ожидания: %d", tel_count_before)
@@ -337,7 +328,6 @@ class ThumbTackBot:
             logger.info("Телефон найден через tel:: %s (raw=%r)", phone, raw)
             return phone or raw
 
-        # 4) Фолбэк: ищем номер как текст по regex
         logger.info("Пробуем фолбэк по тексту (PHONE_REGEX)")
         node = self.page.get_by_text(re.compile(PHONE_REGEX))
         node_count = await node.count()
@@ -371,7 +361,7 @@ class ThumbTackBot:
                 results.append({
                     "index": i,
                     "href": href,
-                    "lead_key": lead_key,  # 👈 добавили
+                    "lead_key": lead_key,
                     "phone": store.phone_for_thread(href),
                     "status": "skipped_already_seen"
                 })

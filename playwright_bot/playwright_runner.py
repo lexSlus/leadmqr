@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, Optional
 from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
+from playwright_bot.state_store import StateStore
 from playwright_bot.thumbtack_bot import ThumbTackBot
 
 from playwright_bot.utils import unique_user_data_dir
@@ -57,31 +58,17 @@ class LeadRunner:
         logger.info("LeadRunner closed")
 
 
-    async def _extract_phone_for_lead(self, lead_key: str,
-                                      attempts: int = 3, delay: float = 0.7) -> Optional[str]:
-        """
-        Открываем Inbox во второй временной вкладке и ищем телефон
-        ровно для этого lead_key (несколько попыток).
-        """
-        inbox = await self._ctx.new_page()
-        try:
-            await inbox.goto(f"{SETTINGS.base_url}/pro-inbox/",
-                             wait_until="domcontentloaded", timeout=60000)
-            inbox_bot = ThumbTackBot(inbox)
-            if "login" in inbox.url.lower():
-                await inbox_bot.login_if_needed()
-                await inbox.goto(f"{SETTINGS.base_url}/pro-inbox/",
-                                 wait_until="domcontentloaded", timeout=60000)
+    async def _extract_phone_for_lead(self, lead_key: str) -> Optional[str]:
+        rows = await self.bot.extract_phones_from_all_threads(store=None)
+        for row in rows or []:
+            if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
+                phone = str(row["phone"]).strip()
+                logger.info("PHONE FOUND for %s -> %s", lead_key, phone)
+                return phone
 
-            for _ in range(attempts):
-                rows = await inbox_bot.extract_phones_from_all_threads()
-                for row in rows or []:
-                    if row.get("lead_key") == lead_key and row.get("phone"):
-                        return row["phone"]
-                await asyncio.sleep(delay)
-            return None
-        finally:
-            await inbox.close()
+        logger.info("PHONE NOT FOUND for %s (rows checked=%d)", lead_key, len(rows or []))
+        return None
+
 
     async def process_lead(self, lead: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -91,6 +78,7 @@ class LeadRunner:
           - (опц.) достаём телефон в Inbox,
           - возвращаем минимально нужные данные.
         """
+
         if not self._started:
             await self.start()
 
@@ -103,10 +91,12 @@ class LeadRunner:
         await self.bot.open_leads()
         await self.bot.open_lead_details(lead)
         await self.bot.send_template_message(dry_run=True)
+        phone = await self._extract_phone_for_lead(lk)
 
         result: Dict[str, Any] = {
             "ok": True,
             "lead_key": lk,
+            "phone": phone,
             "variables": {
                 "lead_id": lk,
                 "lead_url": f"{SETTINGS.base_url}{href}",
@@ -116,7 +106,5 @@ class LeadRunner:
             },
         }
         logger.info(f"result - {result}")
-
-        result["phone"] = await self._extract_phone_for_lead(lk)
-        logger.info("process_lead: phone for %s -> %s", lk, result["phone"] or "NONE")
+        logger.info("process_lead: phone for %s -> %s", lk, phone or "NONE")
         return result
