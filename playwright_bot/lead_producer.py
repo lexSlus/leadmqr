@@ -80,35 +80,35 @@ class LeadProducer:
         profile_to_use = existing_profile if existing_profile else self.user_dir
         log.info("Using profile: %s", profile_to_use)
         
-               try:
-                   self._ctx = await self._pw.chromium.launch_persistent_context(
-                       user_data_dir=profile_to_use,
-                       headless=False,
-                       args=[
-                           "--remote-debugging-port=9222",  # Debug port
-                           "--no-sandbox", 
-                           "--disable-setuid-sandbox", 
-                           "--disable-dev-shm-usage", 
-                           "--disable-gpu",
-                       ],
-                       viewport={"width": 1920, "height": 1080},
-                   )
-               except Exception as e:
-                   log.error("Failed to launch browser with existing profile: %s", e)
-                   log.info("Falling back to new profile...")
-                   # Fallback к новому профилю
-                   self._ctx = await self._pw.chromium.launch_persistent_context(
-                       user_data_dir=self.user_dir,
-                       headless=False,
-                       args=[
-                           "--remote-debugging-port=9222",  # Debug port
-                           "--no-sandbox", 
-                           "--disable-setuid-sandbox", 
-                           "--disable-dev-shm-usage", 
-                           "--disable-gpu",
-                       ],
-                       viewport={"width": 1920, "height": 1080},
-                   )
+        try:
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=profile_to_use,
+                headless=False,
+                args=[
+                    "--remote-debugging-port=9222",  # Debug port
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage", 
+                    "--disable-gpu",
+                ],
+                viewport={"width": 1920, "height": 1080},
+            )
+        except Exception as e:
+            log.error("Failed to launch browser with existing profile: %s", e)
+            log.info("Falling back to new profile...")
+            # Fallback к новому профилю
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=self.user_dir,
+                headless=False,
+                args=[
+                    "--remote-debugging-port=9222",  # Debug port
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage", 
+                    "--disable-gpu",
+                ],
+                viewport={"width": 1920, "height": 1080},
+            )
         
         self.page = await self._ctx.new_page()
         
