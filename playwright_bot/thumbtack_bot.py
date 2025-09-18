@@ -54,20 +54,30 @@ class ThumbTackBot:
         
         # Дополнительные методы обхода детекции
         await self.page.evaluate("""
-            // Подделываем screen resolution
-            Object.defineProperty(screen, 'width', { get: () => 1920 });
-            Object.defineProperty(screen, 'height', { get: () => 1080 });
-            Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
-            
-            // Подделываем timezone
-            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
-                value: function() { return { timeZone: 'America/New_York' }; }
-            });
-            
-            // Убираем все automation флаги
-            delete window.chrome;
-            delete window.navigator.webdriver;
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            try {
+                // Подделываем screen resolution
+                Object.defineProperty(screen, 'width', { get: () => 1920, configurable: true });
+                Object.defineProperty(screen, 'height', { get: () => 1080, configurable: true });
+                Object.defineProperty(screen, 'colorDepth', { get: () => 24, configurable: true });
+                
+                // Подделываем timezone
+                Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
+                    value: function() { return { timeZone: 'America/New_York' }; },
+                    configurable: true
+                });
+                
+                // Убираем все automation флаги (с проверкой)
+                if (window.chrome) delete window.chrome;
+                if (navigator.webdriver !== undefined) {
+                    delete navigator.webdriver;
+                }
+                Object.defineProperty(navigator, 'webdriver', { 
+                    get: () => undefined, 
+                    configurable: true 
+                });
+            } catch (e) {
+                console.log('Stealth setup error:', e);
+            }
         """)
         
         await asyncio.sleep(random.uniform(2, 4))
@@ -151,6 +161,22 @@ class ThumbTackBot:
         logger.info("Clearing all data and retrying...")
         await self.page.context.clear_cookies()
         await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
+        
+        # Метод 4: Попробовать через мобильный User Agent
+        logger.info("Trying mobile user agent...")
+        await self.page.set_extra_http_headers({
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
+        })
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
+        
+        # Метод 5: Попробовать через VPN имитацию
+        logger.info("Trying VPN simulation...")
+        await self.page.set_extra_http_headers({
+            "CF-IPCountry": "US",
+            "CF-Ray": "1234567890abcdef",
+            "X-Forwarded-For": "192.168.1.100"
+        })
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
         
         if "captcha" not in self.page.url.lower():
