@@ -31,21 +31,34 @@ class LeadRunner:
         
         # Пробуем использовать готовый профиль с авторизацией
         import os
+        import shutil
         existing_profile = None
         for profile_dir in ["tt_profile", "playwright_bot/tt_profile", "playwright_bot/playwright_profile"]:
             full_path = os.path.join(os.getcwd(), profile_dir)
             if os.path.exists(full_path):
                 existing_profile = full_path
                 logger.info("Found existing profile: %s", existing_profile)
+                
+                # Удаляем lock файлы для избежания блокировки
+                lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie"]
+                for lock_file in lock_files:
+                    lock_path = os.path.join(full_path, lock_file)
+                    if os.path.exists(lock_path):
+                        try:
+                            os.remove(lock_path)
+                            logger.info("Removed lock file: %s", lock_path)
+                        except Exception as e:
+                            logger.warning("Could not remove lock file %s: %s", lock_path, e)
                 break
         
         profile_to_use = existing_profile if existing_profile else self.user_dir
         logger.info("Using profile: %s", profile_to_use)
         
-        self._ctx = await self._pw.chromium.launch_persistent_context(
-            user_data_dir=profile_to_use,
-            headless=False,
-            slow_mo=getattr(SETTINGS, "slow_mo", 0),
+        try:
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=profile_to_use,
+                headless=False,
+                slow_mo=getattr(SETTINGS, "slow_mo", 0),
             args=getattr(SETTINGS, "chromium_args", [
                 "--no-sandbox", 
                 "--disable-setuid-sandbox", 
@@ -110,6 +123,29 @@ class LeadRunner:
                 "Cache-Control": "max-age=0",
             },
         )
+        except Exception as e:
+            logger.error("Failed to launch browser with existing profile: %s", e)
+            logger.info("Falling back to new profile...")
+            # Fallback к новому профилю
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=self.user_dir,
+                headless=False,
+                slow_mo=getattr(SETTINGS, "slow_mo", 0),
+                args=getattr(SETTINGS, "chromium_args", [
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage", 
+                    "--disable-gpu",
+                    "--disable-images",
+                    "--disable-plugins",
+                    "--disable-extensions",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding"
+                ]),
+                viewport={"width": 1920, "height": 1080},
+            )
+        
         self.page = await self._ctx.new_page()
         
         # Агрессивный Stealth JavaScript для обхода детекции ботов

@@ -52,14 +52,26 @@ class LeadProducer:
             if os.path.exists(full_path):
                 existing_profile = full_path
                 log.info("Found existing profile: %s", existing_profile)
+                
+                # Удаляем lock файлы для избежания блокировки
+                lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie"]
+                for lock_file in lock_files:
+                    lock_path = os.path.join(full_path, lock_file)
+                    if os.path.exists(lock_path):
+                        try:
+                            os.remove(lock_path)
+                            log.info("Removed lock file: %s", lock_path)
+                        except Exception as e:
+                            log.warning("Could not remove lock file %s: %s", lock_path, e)
                 break
         
         profile_to_use = existing_profile if existing_profile else self.user_dir
         log.info("Using profile: %s", profile_to_use)
         
-        self._ctx = await self._pw.chromium.launch_persistent_context(
-            user_data_dir=profile_to_use,
-            headless=False,
+        try:
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=profile_to_use,
+                headless=False,
             args=getattr(SETTINGS, "chromium_args", [
                 "--no-sandbox", 
                 "--disable-setuid-sandbox", 
@@ -124,6 +136,28 @@ class LeadProducer:
                 "Cache-Control": "max-age=0",
             },
         )
+        except Exception as e:
+            log.error("Failed to launch browser with existing profile: %s", e)
+            log.info("Falling back to new profile...")
+            # Fallback к новому профилю
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=self.user_dir,
+                headless=False,
+                args=getattr(SETTINGS, "chromium_args", [
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage", 
+                    "--disable-gpu",
+                    "--disable-images",
+                    "--disable-plugins",
+                    "--disable-extensions",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding"
+                ]),
+                viewport={"width": 1920, "height": 1080},
+            )
+        
         self.page = await self._ctx.new_page()
         
         # Stealth JavaScript для обхода детекции ботов
