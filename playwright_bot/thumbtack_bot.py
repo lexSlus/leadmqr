@@ -98,14 +98,25 @@ class ThumbTackBot:
 
 
     async def open_leads(self):
-        # Открываем страницу лидов напрямую
+        # Сначала идем на главную страницу для "прогрева" сессии
+        logger.info("[open_leads] Going to main page first...")
+        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
+        await asyncio.sleep(2)  # Даем время на загрузку
+        
+        # Теперь пробуем зайти на pro-leads
+        logger.info("[open_leads] Now going to pro-leads...")
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
         logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
+        
         # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
         if "login" in self.page.url.lower():
+            logger.info("[open_leads] Redirected to login, attempting login...")
             await self.login_if_needed()
-            # await self.page.context.storage_state(path=SETTINGS.state_path)
+            # Ждем после логина
+            await asyncio.sleep(3)
+            # Пробуем снова
             await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            logger.info("[open_leads] After login, URL сейчас: %s", self.page.url)
 
         # На всякий случай ждём загрузку DOM
         try:

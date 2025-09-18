@@ -80,16 +80,30 @@ class LeadRunner:
                 "--disable-features=TranslateUI,BlinkGenPropertyTrees",
                 "--disable-ipc-flooding-protection"
             ]),
-            viewport=None,
+            viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            extra_http_headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Cache-Control": "max-age=0",
+            },
         )
         self.page = await self._ctx.new_page()
         
-        # Stealth JavaScript для обхода детекции ботов
+        # Агрессивный Stealth JavaScript для обхода детекции ботов
         await self.page.add_init_script("""
             // Убираем webdriver флаг
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined,
+                configurable: true
             });
             
             // Подделываем permissions API
@@ -100,45 +114,117 @@ class LeadRunner:
                     originalQuery(parameters)
             );
             
-            // Подделываем plugins
+            // Подделываем plugins с реалистичными данными
             Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
+                get: () => ({
+                    length: 5,
+                    0: { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                    1: { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                    2: { name: 'Native Client', filename: 'internal-nacl-plugin' },
+                    3: { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll' },
+                    4: { name: 'Microsoft Edge PDF Viewer', filename: 'pdf' }
+                }),
+                configurable: true
             });
             
             // Подделываем languages
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['en-US', 'en'],
+                configurable: true
+            });
+            
+            // Подделываем platform
+            Object.defineProperty(navigator, 'platform', {
+                get: () => 'Win32',
+                configurable: true
+            });
+            
+            // Подделываем hardwareConcurrency
+            Object.defineProperty(navigator, 'hardwareConcurrency', {
+                get: () => 8,
+                configurable: true
+            });
+            
+            // Подделываем deviceMemory
+            Object.defineProperty(navigator, 'deviceMemory', {
+                get: () => 8,
+                configurable: true
             });
             
             // Убираем automation флаги
             window.chrome = {
-                runtime: {},
+                runtime: {
+                    onConnect: undefined,
+                    onMessage: undefined,
+                    connect: undefined,
+                    sendMessage: undefined
+                },
+                loadTimes: function() { return {}; },
+                csi: function() { return {}; },
+                app: {}
             };
             
             // Подделываем screen properties
             Object.defineProperty(screen, 'availHeight', {
                 get: () => 1040,
+                configurable: true
             });
             Object.defineProperty(screen, 'availWidth', {
                 get: () => 1920,
+                configurable: true
+            });
+            
+            // Подделываем timezone
+            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
+                value: function() {
+                    return { timeZone: 'America/New_York' };
+                }
             });
             
             // Убираем automation из window
-            delete window.__playwright;
-            delete window.__pw_manual;
-            delete window.__webdriver_evaluate;
-            delete window.__webdriver_script_func;
-            delete window.__webdriver_script_fn;
-            delete window.__fxdriver_evaluate;
-            delete window.__driver_unwrapped;
-            delete window.__webdriver_unwrapped;
-            delete window.__driver_evaluate;
-            delete window.__selenium_unwrapped;
-            delete window.__selenium_evaluate;
-            delete window.__$fxdriver_evaluate;
-            delete window.__$fxdriver_unwrapped;
-            delete window.__fxdriver_unwrapped;
-            delete window.__webdriver_script_function;
+            const propsToDelete = [
+                '__playwright', '__pw_manual', '__webdriver_evaluate', '__webdriver_script_func',
+                '__webdriver_script_fn', '__fxdriver_evaluate', '__driver_unwrapped',
+                '__webdriver_unwrapped', '__driver_evaluate', '__selenium_unwrapped',
+                '__selenium_evaluate', '__$fxdriver_evaluate', '__$fxdriver_unwrapped',
+                '__fxdriver_unwrapped', '__webdriver_script_function', '__nightmare',
+                '_phantom', '__phantom', 'callPhantom', '_selenium', 'calledSelenium',
+                '$cdc_asdjflasutopfhvcZLmcfl_', '$chrome_asyncScriptInfo',
+                '__$webdriverAsyncExecutor', 'webdriver', '__webdriverFunc',
+                '__webdriver_script_func', '__webdriver_script_fn', '__fxdriver_unwrapped',
+                '__driver_unwrapped', '__webdriver_unwrapped', '__selenium_unwrapped',
+                '__webdriver_evaluate', '__selenium_evaluate', '__fxdriver_evaluate'
+            ];
+            
+            propsToDelete.forEach(prop => {
+                try {
+                    delete window[prop];
+                } catch (e) {}
+            });
+            
+            // Подделываем getBoundingClientRect
+            const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+            Element.prototype.getBoundingClientRect = function() {
+                const rect = originalGetBoundingClientRect.call(this);
+                return {
+                    ...rect,
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height)
+                };
+            };
+            
+            // Подделываем Date для стабильности
+            const originalDate = Date;
+            Date = function(...args) {
+                if (args.length === 0) {
+                    return new originalDate(originalDate.now() + Math.random() * 1000);
+                }
+                return new originalDate(...args);
+            };
+            Date.now = () => originalDate.now() + Math.random() * 1000;
+            Date.prototype = originalDate.prototype;
         """)
         
         # Блокируем ненужные ресурсы для ускорения
