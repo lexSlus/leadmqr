@@ -1,3 +1,2 @@
-2025/08/14-07:28:31.402 5a95 Reusing MANIFEST /app/tt_profile/Default/Session Storage/MANIFEST-000001
-2025/08/14-07:28:31.402 5a95 Recovering log #8
-2025/08/14-07:28:31.403 5a95 Reusing old log /app/tt_profile/Default/Session Storage/000008.log 
+2025/09/18-09:54:57.733 4c Creating DB /app/tt_profile/Default/Session Storage since it was missing.
+2025/09/18-09:54:57.752 4c Reusing MANIFEST /app/tt_profile/Default/Session Storage/MANIFEST-000001

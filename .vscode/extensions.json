@@ -1,0 +1,123 @@
+{
+  "recommendations": [
+    // Python
+    "ms-python.python",
+    "ms-python.pylint",
+    "ms-python.flake8",
+    "ms-python.mypy-type-checker",
+    "ms-python.black-formatter",
+    "ms-python.isort",
+    "ms-python.debugpy",
+    
+    // JavaScript/TypeScript
+    "ms-vscode.vscode-typescript-next",
+    "bradlc.vscode-tailwindcss",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "ms-vscode.vscode-json",
+    
+    // Git
+    "eamodio.gitlens",
+    "github.vscode-pull-request-github",
+    "github.copilot",
+    "github.copilot-chat",
+    
+    // Productivity
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "ms-vscode-remote.remote-containers",
+    "ms-vscode-remote.remote-ssh",
+    "ms-vscode-remote.remote-ssh-edit",
+    
+    // Themes and Icons
+    "pkief.material-icon-theme",
+    "zhuangtongfa.material-theme",
+    "dracula-theme.theme-dracula",
+    "monokai.theme-monokai-pro-vscode",
+    
+    // Code Quality
+    "streetsidesoftware.code-spell-checker",
+    "gruntfuggly.todo-tree",
+    "aaron-bond.better-comments",
+    "alefragnani.bookmarks",
+    "ms-vscode.vscode-thunder-client",
+    
+    // Markdown
+    "yzhang.markdown-all-in-one",
+    "shd101wyy.markdown-preview-enhanced",
+    "davidanson.vscode-markdownlint",
+    
+    // Docker
+    "ms-azuretools.vscode-docker",
+    "ms-vscode-remote.remote-containers",
+    
+    // Database
+    "ms-mssql.mssql",
+    "ms-ossdata.vscode-postgresql",
+    
+    // Web Development
+    "ritwickdey.liveserver",
+    "ms-vscode.live-server",
+    "formulahendry.auto-rename-tag",
+    "bradlc.vscode-tailwindcss",
+    
+    // Productivity Tools
+    "ms-vscode.hexeditor",
+    "ms-vscode.powershell",
+    "ms-vscode.vscode-json",
+    "redhat.vscode-xml",
+    
+    // AI and Code Assistance
+    "github.copilot",
+    "github.copilot-chat",
+    "ms-vscode.vscode-github-issue-notebooks",
+    
+    // File Management
+    "alefragnani.project-manager",
+    "ms-vscode.vscode-explorer-exclude",
+    
+    // Terminal
+    "ms-vscode.terminal-profiles",
+    
+    // Debugging
+    "ms-vscode.vscode-js-debug",
+    "ms-python.debugpy",
+    
+    // Version Control
+    "eamodio.gitlens",
+    "github.vscode-pull-request-github",
+    "ms-vscode.vscode-github-issue-notebooks",
+    
+    // Utilities
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "ms-vscode.hexeditor",
+    "ms-vscode.powershell",
+    
+    // Django (если используете Django)
+    "batisteo.vscode-django",
+    "ms-python.python",
+    
+    // Celery (для вашего проекта)
+    "ms-python.python",
+    
+    // Playwright (для вашего проекта)
+    "ms-playwright.playwright",
+    
+    // Additional useful extensions
+    "ms-vscode.vscode-typescript-next",
+    "ms-vscode.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "formulahendry.auto-close-tag",
+    "christian-kohler.path-intellisense",
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "ms-azuretools.vscode-docker"
+  ],
+  "unwantedRecommendations": [
+    // Расширения, которые могут конфликтовать или не нужны
+    "ms-vscode.vscode-typescript",
+    "hookyqr.beautify",
+    "ms-vscode.vscode-css-peek"
+  ]
+}

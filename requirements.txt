@@ -10,4 +10,3 @@ asyncio~=4.0.0
 unfold~=1.2.3
 djangorestframework~=3.16.1
 requests~=2.32.4
-aioredis>=2.0

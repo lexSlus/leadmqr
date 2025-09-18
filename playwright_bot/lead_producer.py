@@ -54,7 +54,7 @@ class LeadProducer:
                 log.info("Found existing profile: %s", existing_profile)
                 
                 # Удаляем lock файлы для избежания блокировки
-                lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie"]
+                lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie", "SingletonLock.tmp", "LockFile"]
                 for lock_file in lock_files:
                     lock_path = os.path.join(full_path, lock_file)
                     if os.path.exists(lock_path):
@@ -63,6 +63,17 @@ class LeadProducer:
                             log.info("Removed lock file: %s", lock_path)
                         except Exception as e:
                             log.warning("Could not remove lock file %s: %s", lock_path, e)
+                
+                # Удаляем весь профиль если он заблокирован
+                try:
+                    import subprocess
+                    result = subprocess.run(['lsof', full_path], capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout:
+                        log.warning("Profile in use, removing entire profile directory")
+                        shutil.rmtree(full_path)
+                        existing_profile = None
+                except Exception as e:
+                    log.warning("Could not check profile usage: %s", e)
                 break
         
         profile_to_use = existing_profile if existing_profile else self.user_dir

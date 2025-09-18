@@ -1,3 +1,2 @@
-2025/08/13-22:55:00.554 c5b Reusing MANIFEST /app/tt_profile/Default/Site Characteristics Database/MANIFEST-000001
-2025/08/13-22:55:00.560 c5b Recovering log #3
-2025/08/13-22:55:00.561 c5b Reusing old log /app/tt_profile/Default/Site Characteristics Database/000003.log 
+2025/09/18-09:54:57.582 49 Creating DB /app/tt_profile/Default/Site Characteristics Database since it was missing.
+2025/09/18-09:54:57.617 49 Reusing MANIFEST /app/tt_profile/Default/Site Characteristics Database/MANIFEST-000001

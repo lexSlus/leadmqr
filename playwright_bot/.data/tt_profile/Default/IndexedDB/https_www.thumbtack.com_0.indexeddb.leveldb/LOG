@@ -1,25 +1,3 @@
-2025/08/22-16:41:50.302 1880977 Reusing MANIFEST /Users/lex/Documents/leadmqr/playwright_bot/.data/tt_profile/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/MANIFEST-000001
-2025/08/22-16:41:50.303 1880977 Recovering log #8
-2025/08/22-16:41:50.303 1880977 Reusing old log /Users/lex/Documents/leadmqr/playwright_bot/.data/tt_profile/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/000008.log 
-2025/08/22-16:41:50.303 1880977 Delete type=2 #7
-2025/08/22-16:41:50.309 1880978 Level-0 table #13: started
-2025/08/22-16:41:50.310 1880978 Level-0 table #13: 798 bytes OK
-2025/08/22-16:41:50.312 1880978 Delete type=0 #8
-2025/08/22-16:41:50.313 1880975 Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at '\x00\x06\x00\x00\x05' @ 147 : 1
-2025/08/22-16:41:50.313 1880975 Compacting 1@0 + 1@1 files
-2025/08/22-16:41:50.314 1880975 Generated table #14@0: 51 keys, 1315 bytes
-2025/08/22-16:41:50.314 1880975 Compacted 1@0 + 1@1 files => 1315 bytes
-2025/08/22-16:41:50.315 1880975 compacted to: files[ 0 1 1 0 0 0 0 ]
-2025/08/22-16:41:50.315 1880975 Delete type=2 #13
-2025/08/22-16:41:50.316 1880975 Manual compaction at level-0 from '\x00\x06\x00\x00\x05' @ 147 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)
-2025/08/22-16:41:50.316 1880975 Level-0 table #16: started
-2025/08/22-16:41:50.317 1880975 Level-0 table #16: 607 bytes OK
-2025/08/22-16:41:50.318 1880975 Delete type=0 #12
-2025/08/22-16:41:50.318 1880975 Delete type=2 #10
-2025/08/22-16:41:50.318 1880975 Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at '\x00\x06\x00\x00\x04' @ 161 : 1
-2025/08/22-16:41:50.318 1880975 Compacting 1@0 + 1@1 files
-2025/08/22-16:41:50.320 1880975 Generated table #17@0: 52 keys, 1325 bytes
-2025/08/22-16:41:50.320 1880975 Compacted 1@0 + 1@1 files => 1325 bytes
-2025/08/22-16:41:50.321 1880975 compacted to: files[ 0 1 1 0 0 0 0 ]
-2025/08/22-16:41:50.321 1880975 Delete type=2 #16
-2025/08/22-16:41:50.321 1880975 Manual compaction at level-0 from '\x00\x06\x00\x00\x04' @ 161 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/08/24-23:11:43.267 19786c3 Reusing MANIFEST /Users/lex/Documents/leadmqr/playwright_bot/.data/tt_profile/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/08/24-23:11:43.267 19786c3 Recovering log #15
+2025/08/24-23:11:43.267 19786c3 Reusing old log /Users/lex/Documents/leadmqr/playwright_bot/.data/tt_profile/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/000015.log 

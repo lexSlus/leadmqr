@@ -1,3 +1,2 @@
-2025/08/13-22:55:07.628 c5a Reusing MANIFEST /app/tt_profile/Default/GCM Store/MANIFEST-000001
-2025/08/13-22:55:07.635 c5a Recovering log #3
-2025/08/13-22:55:07.636 c5a Reusing old log /app/tt_profile/Default/GCM Store/000003.log 
+2025/09/18-09:55:00.532 34 Creating DB /app/tt_profile/Default/GCM Store since it was missing.
+2025/09/18-09:55:00.535 34 Reusing MANIFEST /app/tt_profile/Default/GCM Store/MANIFEST-000001

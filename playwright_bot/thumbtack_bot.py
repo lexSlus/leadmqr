@@ -179,6 +179,35 @@ class ThumbTackBot:
         })
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
         
+        # Метод 6: Попробовать через Tor-like headers
+        logger.info("Trying Tor-like headers...")
+        await self.page.set_extra_http_headers({
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
+        })
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
+        
+        # Метод 7: Попробовать через разные домены
+        alternative_urls = [
+            "https://www.thumbtack.com/pro/dashboard",
+            "https://www.thumbtack.com/pro/leads",
+            "https://thumbtack.com/pro-leads"
+        ]
+        
+        for alt_url in alternative_urls:
+            logger.info(f"Trying alternative URL: {alt_url}")
+            try:
+                await self.page.goto(alt_url, wait_until="domcontentloaded", timeout=30000)
+                if "login" not in self.page.url.lower() and "captcha" not in self.page.url.lower():
+                    logger.info(f"Success with alternative URL: {alt_url}")
+                    return True
+            except Exception as e:
+                logger.warning(f"Failed alternative URL {alt_url}: {e}")
+                continue
+        
         if "captcha" not in self.page.url.lower():
             logger.info("Successfully bypassed captcha")
             return True
