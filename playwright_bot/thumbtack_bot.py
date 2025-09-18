@@ -98,25 +98,50 @@ class ThumbTackBot:
 
 
     async def open_leads(self):
-        # Сначала идем на главную страницу для "прогрева" сессии
-        logger.info("[open_leads] Going to main page first...")
-        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
-        await asyncio.sleep(2)  # Даем время на загрузку
+        # Альтернативный подход - пробуем разные способы доступа
+        logger.info("[open_leads] Attempting to access pro-leads...")
         
-        # Теперь пробуем зайти на pro-leads
-        logger.info("[open_leads] Now going to pro-leads...")
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-        logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
-        
-        # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
-        if "login" in self.page.url.lower():
-            logger.info("[open_leads] Redirected to login, attempting login...")
-            await self.login_if_needed()
-            # Ждем после логина
-            await asyncio.sleep(3)
-            # Пробуем снова
+        # Способ 1: Прямой переход
+        try:
             await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-            logger.info("[open_leads] After login, URL сейчас: %s", self.page.url)
+            logger.info("[open_leads] Direct access, URL: %s", self.page.url)
+            if "login" not in self.page.url.lower():
+                logger.info("[open_leads] Success! Direct access worked")
+                return
+        except Exception as e:
+            logger.warning("[open_leads] Direct access failed: %s", e)
+        
+        # Способ 2: Через главную страницу
+        try:
+            logger.info("[open_leads] Trying via main page...")
+            await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
+            await asyncio.sleep(3)  # Даем время на загрузку
+            
+            # Ищем ссылку на leads
+            leads_link = self.page.locator("a[href*='leads'], a:has-text('Leads')").first
+            if await leads_link.count() > 0:
+                logger.info("[open_leads] Found leads link, clicking...")
+                await leads_link.click()
+                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+                logger.info("[open_leads] Via link, URL: %s", self.page.url)
+            else:
+                # Fallback - прямой переход
+                await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+                logger.info("[open_leads] Fallback direct, URL: %s", self.page.url)
+        except Exception as e:
+            logger.warning("[open_leads] Via main page failed: %s", e)
+        
+        # Если все еще на login - пробуем авторизацию
+        if "login" in self.page.url.lower():
+            logger.info("[open_leads] Still on login, attempting authentication...")
+            try:
+                await self.login_if_needed()
+                await asyncio.sleep(3)
+                await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+                logger.info("[open_leads] After auth, URL: %s", self.page.url)
+            except Exception as e:
+                logger.error("[open_leads] Authentication failed: %s", e)
+                raise
 
         # На всякий случай ждём загрузку DOM
         try:

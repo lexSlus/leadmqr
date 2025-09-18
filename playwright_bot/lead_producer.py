@@ -43,8 +43,22 @@ class LeadProducer:
             return
 
         self._pw = await async_playwright().start()
+        
+        # Пробуем использовать готовый профиль с авторизацией
+        import os
+        existing_profile = None
+        for profile_dir in ["tt_profile", "playwright_bot/tt_profile", "playwright_bot/playwright_profile"]:
+            full_path = os.path.join(os.getcwd(), profile_dir)
+            if os.path.exists(full_path):
+                existing_profile = full_path
+                log.info("Found existing profile: %s", existing_profile)
+                break
+        
+        profile_to_use = existing_profile if existing_profile else self.user_dir
+        log.info("Using profile: %s", profile_to_use)
+        
         self._ctx = await self._pw.chromium.launch_persistent_context(
-            user_data_dir=self.user_dir,
+            user_data_dir=profile_to_use,
             headless=False,
             args=getattr(SETTINGS, "chromium_args", [
                 "--no-sandbox", 

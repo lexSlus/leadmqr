@@ -28,8 +28,22 @@ class LeadRunner:
         if self._started:
             return
         self._pw = await async_playwright().start()
+        
+        # Пробуем использовать готовый профиль с авторизацией
+        import os
+        existing_profile = None
+        for profile_dir in ["tt_profile", "playwright_bot/tt_profile", "playwright_bot/playwright_profile"]:
+            full_path = os.path.join(os.getcwd(), profile_dir)
+            if os.path.exists(full_path):
+                existing_profile = full_path
+                logger.info("Found existing profile: %s", existing_profile)
+                break
+        
+        profile_to_use = existing_profile if existing_profile else self.user_dir
+        logger.info("Using profile: %s", profile_to_use)
+        
         self._ctx = await self._pw.chromium.launch_persistent_context(
-            user_data_dir=self.user_dir,
+            user_data_dir=profile_to_use,
             headless=False,
             slow_mo=getattr(SETTINGS, "slow_mo", 0),
             args=getattr(SETTINGS, "chromium_args", [
@@ -230,13 +244,29 @@ class LeadRunner:
         # Блокируем ненужные ресурсы для ускорения
         await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
         
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
-                             wait_until="domcontentloaded", timeout=25000)
+        # Сначала проверяем авторизацию на главной странице
+        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
+        logger.info("Initial page load, URL: %s", self.page.url)
+        
         self.bot = ThumbTackBot(self.page)
-        if "login" in self.page.url.lower():
+        
+        # Проверяем авторизацию - если есть кнопка Login, значит не авторизованы
+        login_elements = await self.page.locator("a:has-text('Log in'), button:has-text('Log in')").count()
+        if login_elements > 0:
+            logger.info("Not logged in, attempting login...")
             await self.bot.login_if_needed()
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
-                                 wait_until="domcontentloaded", timeout=25000)
+            await asyncio.sleep(2)
+        
+        # Теперь идем на pro-leads
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+        logger.info("After login check, URL: %s", self.page.url)
+        
+        # Если все еще на login, значит проблема с авторизацией
+        if "login" in self.page.url.lower():
+            logger.warning("Still on login page, may need manual authorization")
+        else:
+            logger.info("Successfully accessed pro-leads page")
+            
         self._started = True
         logger.info("LeadRunner started")
 
