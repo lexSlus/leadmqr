@@ -30,15 +30,23 @@ class SimpleRunner:
             
         self._pw = await async_playwright().start()
         
+        # Определяем headless режим в зависимости от окружения
+        import os
+        headless = not os.getenv('DISPLAY')  # headless если нет DISPLAY
+        logger.info("Starting SimpleRunner in %s mode", "headless" if headless else "GUI")
+        
         # Простые настройки Chrome без stealth
         self._ctx = await self._pw.chromium.launch_persistent_context(
             user_data_dir=self.user_dir,
-            headless=False,
+            headless=headless,
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox", 
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
+                "--disable-images",  # Ускоряем загрузку
+                "--disable-plugins",
+                "--disable-extensions",
             ],
             viewport={"width": 1920, "height": 1080},
         )
