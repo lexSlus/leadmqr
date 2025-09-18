@@ -39,7 +39,38 @@ class ThumbTackBot:
     async def login_if_needed(self):
         # Добавляем случайные задержки для имитации человеческого поведения
         import random
-        await asyncio.sleep(random.uniform(1, 3))
+        await asyncio.sleep(random.uniform(3, 7))  # Увеличиваем задержки
+        
+        # Пробуем обойти капчу - меняем User Agent перед логином
+        await self.page.evaluate("""
+            Object.defineProperty(navigator, 'userAgent', {
+                get: () => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            });
+        """)
+        
+        # Очищаем cookies и localStorage
+        await self.page.context.clear_cookies()
+        await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
+        
+        # Дополнительные методы обхода детекции
+        await self.page.evaluate("""
+            // Подделываем screen resolution
+            Object.defineProperty(screen, 'width', { get: () => 1920 });
+            Object.defineProperty(screen, 'height', { get: () => 1080 });
+            Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
+            
+            // Подделываем timezone
+            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
+                value: function() { return { timeZone: 'America/New_York' }; }
+            });
+            
+            // Убираем все automation флаги
+            delete window.chrome;
+            delete window.navigator.webdriver;
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        """)
+        
+        await asyncio.sleep(random.uniform(2, 4))
         
         login_btn = self.page.get_by_role("link", name=re.compile(r"^Log in$", re.I))
         if await login_btn.count():
@@ -91,10 +122,43 @@ class ThumbTackBot:
         
         # Дополнительная проверка на капчу или блокировку
         if "captcha" in self.page.url.lower() or "blocked" in self.page.url.lower():
-            logger.error("Detected captcha or blocking page: %s", self.page.url)
-            raise RuntimeError("Thumbtack detected bot - captcha or blocking page")
+            logger.warning("Detected captcha, attempting to bypass...")
+            await self.bypass_captcha()
             
         return True
+
+    async def bypass_captcha(self):
+        """Попытка обхода капчи"""
+        logger.info("Attempting captcha bypass...")
+        
+        # Метод 1: Обновить страницу несколько раз
+        for i in range(3):
+            logger.info(f"Refresh attempt {i+1}/3")
+            await self.page.reload(wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(random.uniform(5, 10))
+            
+            # Проверяем исчезла ли капча
+            if "captcha" not in self.page.url.lower():
+                logger.info("Captcha disappeared after refresh")
+                return True
+        
+        # Метод 2: Попробовать другой URL
+        logger.info("Trying alternative approach...")
+        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(random.uniform(3, 6))
+        
+        # Метод 3: Очистить все и попробовать снова
+        logger.info("Clearing all data and retrying...")
+        await self.page.context.clear_cookies()
+        await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
+        
+        if "captcha" not in self.page.url.lower():
+            logger.info("Successfully bypassed captcha")
+            return True
+        
+        logger.error("Failed to bypass captcha")
+        raise RuntimeError("Unable to bypass Thumbtack captcha")
 
 
     async def open_leads(self):
