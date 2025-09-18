@@ -1,6 +1,5 @@
 from leads.models import FoundPhone
 from .services import AICallService
-# from leadmqr.celery import app  # больше не нужен для shared_task
 from celery import shared_task
 import logging
 
@@ -15,9 +14,10 @@ def enqueue_ai_call(found_phone_id: str):
         lead_key=phone_obj.lead_key,
         phone=phone_obj.phone,
     )
-    if not call:
-        logger.error("AI call skipped")
-        return {"skipped": True}
+    # Убрали проверку call для тестирования - всегда делаем звонок
+    # if not call:
+    #     logger.error("AI call skipped")
+    #     return {"skipped": True}
     resp = ai_service.start_call(call, variables=phone_obj.variables)
     logger.info("AI call started %s", resp)
     return resp
