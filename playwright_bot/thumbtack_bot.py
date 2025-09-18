@@ -61,7 +61,14 @@ class ThumbTackBot:
         await self.page.get_by_label(EMAIL_LABEL).fill(SETTINGS.email)
         await self.page.get_by_label(PASS_LABEL).fill(SETTINGS.password)
         await self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"]).click()
-        await self.page.wait_for_load_state("networkidle", timeout=10000)
+        
+        # Увеличиваем таймаут для login и делаем fallback
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=30000)
+        except PWTimeoutError:
+            logger.warning("networkidle timeout, trying domcontentloaded")
+            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+        
         return True
 
 
@@ -97,9 +104,13 @@ class ThumbTackBot:
         results: List[Dict] = []
         try:
             logger.info("[list_new_leads] URL before wait: %s", self.page.url)
-            await self.page.wait_for_load_state("networkidle", timeout=15000)
+            await self.page.wait_for_load_state("networkidle", timeout=25000)
         except Exception as e:
-            logger.warning("[list_new_leads] wait_for_load_state failed: %s", e)
+            logger.warning("[list_new_leads] networkidle timeout, trying domcontentloaded: %s", e)
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception as e2:
+                logger.warning("[list_new_leads] domcontentloaded also failed: %s", e2)
         ctx = self.page
         for fr in self.page.frames:
             if "thumbtack.com" in fr.url and fr is not self.page:
@@ -160,7 +171,12 @@ class ThumbTackBot:
             await btn.wait_for(state="visible", timeout=5000)
             await btn.click()
 
-        await self.page.wait_for_load_state("networkidle", timeout=15000)
+        # Увеличиваем таймаут для open_lead_details
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=25000)
+        except PWTimeoutError:
+            logger.warning("networkidle timeout in open_lead_details, using domcontentloaded")
+            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
