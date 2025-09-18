@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import Any, Dict, Optional
 from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
@@ -10,6 +11,7 @@ from playwright_bot.utils import unique_user_data_dir
 
 logger = logging.getLogger("playwright_bot")
 
+BROWSER_WS_ENDPOINT = "ws://celery_lead_producer:9222"
 
 class LeadRunner:
     """
@@ -28,89 +30,31 @@ class LeadRunner:
         if self._started:
             return
         self._pw = await async_playwright().start()
-        
-        # Пробуем использовать готовый профиль с авторизацией
-        import os
-        import shutil
-        existing_profile = None
-        for profile_dir in ["tt_profile", "playwright_bot/tt_profile", "playwright_bot/playwright_profile"]:
-            full_path = os.path.join(os.getcwd(), profile_dir)
-            if os.path.exists(full_path):
-                existing_profile = full_path
-                logger.info("Found existing profile: %s", existing_profile)
-                
-                # Удаляем lock файлы для избежания блокировки
-                lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie"]
-                for lock_file in lock_files:
-                    lock_path = os.path.join(full_path, lock_file)
-                    if os.path.exists(lock_path):
-                        try:
-                            os.remove(lock_path)
-                            logger.info("Removed lock file: %s", lock_path)
-                        except Exception as e:
-                            logger.warning("Could not remove lock file %s: %s", lock_path, e)
-                break
-        
-        profile_to_use = existing_profile if existing_profile else self.user_dir
-        logger.info("Using profile: %s", profile_to_use)
-        
-        try:
-            self._ctx = await self._pw.chromium.launch_persistent_context(
-                user_data_dir=profile_to_use,
-                headless=False,
-                slow_mo=getattr(SETTINGS, "slow_mo", 0),
-                args=[
-                    "--remote-debugging-port=9222",  # Debug port
-                    "--no-sandbox", 
-                    "--disable-setuid-sandbox", 
-                    "--disable-dev-shm-usage", 
-                    "--disable-gpu",
-                ],
-                viewport={"width": 1920, "height": 1080},
-            )
-        except Exception as e:
-            logger.error("Failed to launch browser with existing profile: %s", e)
-            logger.info("Falling back to new profile...")
-            # Fallback к новому профилю
-            self._ctx = await self._pw.chromium.launch_persistent_context(
-                user_data_dir=self.user_dir,
-                headless=False,
-                slow_mo=getattr(SETTINGS, "slow_mo", 0),
-                args=[
-                    "--remote-debugging-port=9222",  # Debug port
-                    "--no-sandbox", 
-                    "--disable-setuid-sandbox", 
-                    "--disable-dev-shm-usage", 
-                    "--disable-gpu",
-                ],
-                viewport={"width": 1920, "height": 1080},
-            )
-        
+
+        logger.info(f"Connecting to browser at {BROWSER_WS_ENDPOINT}...")
+        self._browser = await self._pw.chromium.connect(BROWSER_WS_ENDPOINT, timeout=60000)
+        logger.info("Successfully connected to the browser.")
+        storage_state_path = "/app/pw_profiles/auth_state.json" if os.path.exists("/app/pw_profiles/auth_state.json") else None
+
+
+
+        self._ctx = await self._browser.new_context(
+            storage_state=storage_state_path,
+            viewport={"width": 1920, "height": 1080},
+            locale=getattr(SETTINGS, "locale", "en-US"),
+        )
         self.page = await self._ctx.new_page()
         
-        # Сначала проверяем авторизацию на главной странице
-        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
-        logger.info("Initial page load, URL: %s", self.page.url)
+        # Блокируем ненужные ресурсы для ускорения
+        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
         
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
+                             wait_until="domcontentloaded", timeout=25000)
         self.bot = ThumbTackBot(self.page)
-        
-        # Проверяем авторизацию - если есть кнопка Login, значит не авторизованы
-        login_elements = await self.page.locator("a:has-text('Log in'), button:has-text('Log in')").count()
-        if login_elements > 0:
-            logger.info("Not logged in, attempting login...")
-            await self.bot.login_if_needed()
-            await asyncio.sleep(2)
-        
-        # Теперь идем на pro-leads
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-        logger.info("After login check, URL: %s", self.page.url)
-        
-        # Если все еще на login, значит проблема с авторизацией
         if "login" in self.page.url.lower():
-            logger.warning("Still on login page, may need manual authorization")
-        else:
-            logger.info("Successfully accessed pro-leads page")
-            
+            await self.bot.login_if_needed()
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
+                                 wait_until="domcontentloaded", timeout=25000)
         self._started = True
         logger.info("LeadRunner started")
 

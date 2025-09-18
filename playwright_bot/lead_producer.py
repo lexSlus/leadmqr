@@ -1,7 +1,5 @@
 # playwright_bot/lead_producer.py
 import asyncio, logging
-import os
-import shutil
 from typing import Optional, Dict, Any, List
 import redis.asyncio as aioredis
 from django.conf import settings as dj_settings
@@ -45,95 +43,31 @@ class LeadProducer:
             return
 
         self._pw = await async_playwright().start()
-        
-        # Пробуем использовать готовый профиль с авторизацией
-        existing_profile = None
-        for profile_dir in ["tt_profile", "playwright_bot/tt_profile", "playwright_bot/playwright_profile"]:
-            full_path = os.path.join(os.getcwd(), profile_dir)
-            if os.path.exists(full_path):
-                existing_profile = full_path
-                log.info("Found existing profile: %s", existing_profile)
-                
-                # Удаляем lock файлы для избежания блокировки
-                lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie", "SingletonLock.tmp", "LockFile"]
-                for lock_file in lock_files:
-                    lock_path = os.path.join(full_path, lock_file)
-                    if os.path.exists(lock_path):
-                        try:
-                            os.remove(lock_path)
-                            log.info("Removed lock file: %s", lock_path)
-                        except Exception as e:
-                            log.warning("Could not remove lock file %s: %s", lock_path, e)
-                
-                # Удаляем весь профиль если он заблокирован
-                try:
-                    import subprocess
-                    result = subprocess.run(['lsof', full_path], capture_output=True, text=True)
-                    if result.returncode == 0 and result.stdout:
-                        log.warning("Profile in use, removing entire profile directory")
-                        shutil.rmtree(full_path)
-                        existing_profile = None
-                except Exception as e:
-                    log.warning("Could not check profile usage: %s", e)
-                break
-        
-        profile_to_use = existing_profile if existing_profile else self.user_dir
-        log.info("Using profile: %s", profile_to_use)
-        
-        try:
-            self._ctx = await self._pw.chromium.launch_persistent_context(
-                user_data_dir=profile_to_use,
-                headless=False,
-                args=[
-                    "--remote-debugging-port=9222",  # Debug port
-                    "--no-sandbox", 
-                    "--disable-setuid-sandbox", 
-                    "--disable-dev-shm-usage", 
-                    "--disable-gpu",
-                ],
-                viewport={"width": 1920, "height": 1080},
-            )
-        except Exception as e:
-            log.error("Failed to launch browser with existing profile: %s", e)
-            log.info("Falling back to new profile...")
-            # Fallback к новому профилю
-            self._ctx = await self._pw.chromium.launch_persistent_context(
-                user_data_dir=self.user_dir,
-                headless=False,
-                args=[
-                    "--remote-debugging-port=9222",  # Debug port
-                    "--no-sandbox", 
-                    "--disable-setuid-sandbox", 
-                    "--disable-dev-shm-usage", 
-                    "--disable-gpu",
-                ],
-                viewport={"width": 1920, "height": 1080},
-            )
-        
+        self._ctx = await self._pw.chromium.launch_persistent_context(
+            user_data_dir=self.user_dir,
+            headless=False,
+            args=[
+                "--remote-debugging-port=9222",  # Debug port
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage", 
+                "--disable-gpu",
+            ],
+            viewport={"width": 1920, "height": 1080},
+        )
         self.page = await self._ctx.new_page()
         
-        # Сначала проверяем авторизацию на главной странице
-        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
-        log.info("Initial page load, URL: %s", self.page.url)
+        # Блокируем ненужные ресурсы для ускорения
+        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
         
-        self.bot = ThumbTackBot(self.page)
-        
-        # Проверяем авторизацию - если есть кнопка Login, значит не авторизованы
-        login_elements = await self.page.locator("a:has-text('Log in'), button:has-text('Log in')").count()
-        if login_elements > 0:
-            log.info("Not logged in, attempting login...")
-            await self.bot.login_if_needed()
-            await asyncio.sleep(2)
-        
-        # Теперь идем на pro-leads
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-        log.info("After login check, URL: %s", self.page.url)
-        
-        # Если все еще на login, значит проблема с авторизацией
+
+        log.info("LeadProducer: opened %s (url=%s)", "/pro-leads", self.page.url)
+
+        self.bot = ThumbTackBot(self.page)
         if "login" in self.page.url.lower():
-            log.warning("Still on login page, may need manual authorization")
-        else:
-            log.info("Successfully accessed pro-leads page")
+            await self.bot.login_if_needed()
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
 
         try:
             await self._loop()
