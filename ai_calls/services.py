@@ -12,15 +12,7 @@ class AICallService:
 
     @transaction.atomic
     def enqueue_if_needed(self, *, lead_key: str, phone: str) -> Optional[AICall]:
-        # не плодим дублей, если уже ждём/в процессе по этому lead_key+phone
-        exists = AICall.objects.filter(
-            lead_key=lead_key,
-            to_phone=phone,
-            status__in=[AICall.Status.PENDING, AICall.Status.IN_PROGRESS],
-        ).exists()
-        if exists:
-            return None
-
+        # Убрали блокировку дублей для тестирования - всегда создаем новый звонок
         call = AICall.objects.create(
             lead_key=lead_key,
             to_phone=phone,

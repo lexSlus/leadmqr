@@ -61,23 +61,23 @@ class ThumbTackBot:
         await self.page.get_by_label(EMAIL_LABEL).fill(SETTINGS.email)
         await self.page.get_by_label(PASS_LABEL).fill(SETTINGS.password)
         await self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"]).click()
-        await self.page.wait_for_load_state("networkidle", timeout=30000)
+        await self.page.wait_for_load_state("networkidle", timeout=10000)
         return True
 
 
     async def open_leads(self):
         # Открываем страницу лидов напрямую
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=60000)
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
         logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
         # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
         if "login" in self.page.url.lower():
             await self.login_if_needed()
             # await self.page.context.storage_state(path=SETTINGS.state_path)
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
 
         # На всякий случай ждём загрузку DOM
         try:
-            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+            await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
         except PWTimeoutError:
             pass
 
@@ -86,7 +86,7 @@ class ThumbTackBot:
             if await leads_link.count():
                 await leads_link.first.click()
                 try:
-                    await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
                 except PWTimeoutError:
                     pass
         else:
@@ -97,7 +97,7 @@ class ThumbTackBot:
         results: List[Dict] = []
         try:
             logger.info("[list_new_leads] URL before wait: %s", self.page.url)
-            await self.page.wait_for_load_state("networkidle", timeout=8000)
+            await self.page.wait_for_load_state("networkidle", timeout=15000)
         except Exception as e:
             logger.warning("[list_new_leads] wait_for_load_state failed: %s", e)
         ctx = self.page
@@ -153,14 +153,14 @@ class ThumbTackBot:
         href = (lead or {}).get("href")
         if href:
             url = href if href.startswith("http") else f"{SETTINGS.base_url}{href}"
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=25000)
         else:
             btn = self.page.get_by_role("button", name=re.compile(r"view\s*details", re.I)).nth(lead["index"])
             await btn.scroll_into_view_if_needed()
             await btn.wait_for(state="visible", timeout=5000)
             await btn.click()
 
-        await self.page.wait_for_load_state("networkidle", timeout=20000)
+        await self.page.wait_for_load_state("networkidle", timeout=15000)
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
@@ -251,10 +251,10 @@ class ThumbTackBot:
 
 
     async def open_messages(self):
-        await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=60000)
+        await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=30000)
         if "login" in self.page.url.lower():
             await self.login_if_needed()
-            await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=30000)
         try:
             await self.page.wait_for_selector("a[href^='/pro-inbox/messages']", timeout=10000)
         except PWTimeoutError:
@@ -275,72 +275,52 @@ class ThumbTackBot:
         return self.page.locator("a[href^='/pro-inbox/messages']")
 
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
+        # клик "Click to show phone number"
         logger.info("Начинаем поиск телефона в текущем треде. URL: %s", self.page.url)
+        show_phone = self.page.get_by_role(SHOW_PHONE["role"], name=SHOW_PHONE["name"])
+        logger.info("Кнопка number show phone: %s", show_phone.count())
 
-        try:
-            await self.page.wait_for_load_state("networkidle", timeout=10_000)
-        except Exception:
-            pass
-
-        show_btn = self.page.get_by_role("button", name=PHONE_TEXT_RE)
-        if await show_btn.count() == 0:
-            show_btn = self.page.locator("button:has(p:has-text(/(click|show).*(phone|number)/i))")
-        if await show_btn.count() == 0:
-            show_btn = self.page.locator("button").filter(has_text=re.compile(r"(phone|number)", re.I))
-        btn_count = await show_btn.count()
-        logger.info("Кнопок 'show phone' найдено: %d", btn_count)
-
-        if btn_count > 0:
-            b = show_btn.first
+        if await show_phone.count():
+            logger.info(f"Найдено {show_phone.count()} ссылок с tel:")
             try:
-                await b.scroll_into_view_if_needed()
-                # Иногда класс типа `dn s_db` мешает видимости — сначала мягкий клик...
-                await b.click(timeout=8_000)
-                logger.info("Клик по 'show phone' выполнен (обычный).")
+                await show_phone.first.scroll_into_view_if_needed()
+                await show_phone.first.click()
+                logger.info("Клик по show phone выполнен")
             except Exception as e:
-                logger.warning("Обычный клик не удался: %s — пробуем force=True", e)
-                try:
-                    await b.click(timeout=6_000, force=True)
-                    logger.info("Клик по 'show phone' выполнен (force=True).")
-                except Exception as e2:
-                    logger.error("Не удалось кликнуть 'show phone' даже force=True: %s", e2)
+                logger.warning("Не удалось кликнуть show phone: %s", e)
 
+        # ждать tel:
         tel_link = self.page.locator("a[href^='tel:']")
-        tel_count_before = await tel_link.count()
-        logger.info("Ссылок tel: найдено до ожидания: %d", tel_count_before)
+        logger.info("Ссылок tel: найдено: %s", tel_link.count())
 
-        if tel_count_before == 0:
+        if await tel_link.count() == 0:
             logger.info("Ждём появления tel:...")
             try:
-                await tel_link.first.wait_for(state="attached", timeout=8_000)
-            except PWTimeoutError:
-                logger.warning("tel: ссылка не появилась за таймаут.")
-            except Exception as e:
-                logger.warning("Ожидание tel: упало: %s", e)
+                await tel_link.first.wait_for(timeout=5000)
+                logger.info("После ожидания ссылок tel: %s", )
 
-        tel_count_after = await tel_link.count()
-        logger.info("Ссылок tel: после ожидания: %d", tel_count_after)
+            except Exception:
+                pass
 
-        if tel_count_after > 0:
-            href = await tel_link.first.get_attribute("href") or ""
-            raw = href.replace("tel:", "").strip()
-            phone = re.sub(r"[^\d+]", "", raw)
-            logger.info("Телефон найден через tel:: %s (raw=%r)", phone, raw)
-            return phone or raw
+        if await tel_link.count():
+            raw = (await tel_link.first.get_attribute("href") or "").replace("tel:", "")
+            logger.info(f"Телефон найден: {raw}")
 
+            return re.sub(r"[^\d+]", "", raw)
+
+        # fallback текстом
         logger.info("Пробуем фолбэк по тексту (PHONE_REGEX)")
         node = self.page.get_by_text(re.compile(PHONE_REGEX))
-        node_count = await node.count()
-        logger.info("Нод по PHONE_REGEX: %d", node_count)
+        logger.info("Нод по PHONE_REGEX: %s", node.count())
 
-        if node_count > 0:
+        if await node.count():
             txt = (await node.first.text_content() or "").strip()
-            phone = re.sub(r"[^\d+]", "", txt)
-            logger.info("Телефон найден текстом: %r -> %s", txt, phone or txt)
-            return phone or txt
+            logger.info("Телефон найден текстом: txt=%r -> %r", txt)
 
-        logger.info("Телефон не найден.")
+            return re.sub(r"[^\d+]", "", txt) or txt
+
         return None
+
 
 
     async def extract_phones_from_all_threads(self, store=None) -> List[Dict[str, Any]]:
@@ -351,10 +331,13 @@ class ThumbTackBot:
 
         results: List[Dict[str, Any]] = []
         total = await threads.count()
+        logger.info("extract_phones_from_all_threads: found %d threads", total)
+        
         for i in range(total):
             row = threads.nth(i)
             href = await row.get_attribute("href") or ""
             lead_key = self.lead_key_from_url(href)
+            logger.info("Thread %d: href=%s, lead_key=%s", i, href, lead_key)
 
             # анти-спам по тредам
             if store is not None and store.should_skip_thread(href):
@@ -375,6 +358,8 @@ class ThumbTackBot:
                 pass
 
             phone = await self._show_and_extract_in_current_thread()
+            logger.info("Thread %d result: lead_key=%s, phone=%s", i, lead_key, phone)
+            
             if store is not None:
                 store.mark_thread_seen(href, phone)
 
@@ -389,3 +374,4 @@ class ThumbTackBot:
             total = max(total, await threads.count())
 
         return results
+

@@ -1,11 +1,12 @@
 from leads.models import FoundPhone
 from .services import AICallService
-from leadmqr.celery import app
+# from leadmqr.celery import app  # больше не нужен для shared_task
+from celery import shared_task
 import logging
 
 logger = logging.getLogger("playwright_bot")
 
-@app.task(queue='ai_calls.enqueue_ai_call')
+@shared_task(name="ai_calls.tasks.enqueue_ai_call", queue="ai_calls")
 def enqueue_ai_call(found_phone_id: str):
     phone_obj = FoundPhone.objects.get(id=found_phone_id)
     logger.info("AI call: lead_key=%s, phone=%s", phone_obj.lead_key, phone_obj.phone)

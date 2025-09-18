@@ -1,21 +1,23 @@
-# docker/Dockerfile.playwright
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# зависимости системы (pgsql client можно убрать если не нужен)
+# Кэшируем установку зависимостей системы
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev curl \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# зависимости Python
+# Копируем только requirements.txt для кэширования pip install
 COPY requirements.txt .
+
+# Устанавливаем зависимости Python (кэшируется если requirements.txt не изменился)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# код проекта
+# Копируем код проекта (этот слой пересобирается при изменении кода)
 COPY . .
 
 ENTRYPOINT ["sh", "/app/entrypoint.sh"]

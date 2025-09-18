@@ -46,18 +46,33 @@ class LeadProducer:
         self._ctx = await self._pw.chromium.launch_persistent_context(
             user_data_dir=self.user_dir,
             headless=False,
-            args=getattr(SETTINGS, "chromium_args", ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]),
+            args=getattr(SETTINGS, "chromium_args", [
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage", 
+                "--disable-gpu",
+                "--disable-images",
+                "--disable-plugins",
+                "--disable-extensions",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding"
+            ]),
             viewport=None,
         )
         self.page = await self._ctx.new_page()
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=60000)
+        
+        # Блокируем ненужные ресурсы для ускорения
+        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
+        
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
 
         log.info("LeadProducer: opened %s (url=%s)", "/pro-leads", self.page.url)
 
         self.bot = ThumbTackBot(self.page)
         if "login" in self.page.url.lower():
             await self.bot.login_if_needed()
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=60000)
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
 
         try:
             await self._loop()

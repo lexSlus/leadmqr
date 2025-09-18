@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import time
 from celery import shared_task
+from django.conf import settings
+from django.core.cache import cache
 from ai_calls.tasks import enqueue_ai_call
 from leads.models import FoundPhone, ProcessedLead
 from playwright_bot.playwright_runner import LeadRunner
@@ -11,6 +14,32 @@ flow = FlowTimer()
 
 _runner = None
 _runner_loop_id = None
+
+# Rate limiting для защиты от блокировки Thumbtack
+RATE_LIMIT_KEY = "thumbtack_rate_limit"
+RATE_LIMIT_INTERVAL = 1.0  # 1 секунда между запросами
+
+# Кэширование найденных телефонов для ускорения
+PHONE_CACHE_KEY = "found_phone_cache"
+PHONE_CACHE_TIMEOUT = 3600  # 1 час кэш
+
+async def wait_for_rate_limit():
+    """Ожидает соблюдения rate limit (1 запрос в секунду)"""
+    while True:
+        last_request_time = cache.get(RATE_LIMIT_KEY, 0)
+        current_time = time.time()
+        
+        if current_time - last_request_time >= RATE_LIMIT_INTERVAL:
+            # Можно делать запрос
+            cache.set(RATE_LIMIT_KEY, current_time, timeout=10)
+            logger.debug("Rate limit: разрешен запрос (последний: %.2f сек назад)", 
+                        current_time - last_request_time)
+            return
+        
+        # Нужно подождать
+        wait_time = RATE_LIMIT_INTERVAL - (current_time - last_request_time)
+        logger.debug("Rate limit: ожидание %.2f сек до следующего запроса", wait_time)
+        await asyncio.sleep(wait_time)
 
 async def _get_runner() -> LeadRunner:
     global _runner, _runner_loop_id
@@ -29,8 +58,8 @@ async def _get_runner() -> LeadRunner:
         _runner_loop_id = loop_id
     return _runner
 
-@shared_task(name="leads.tasks.process_lead_task", queue="lead_proc")
-def process_single_lead_task(lead: dict) -> dict:
+@shared_task(name="leads.tasks.process_lead_task", queue="lead_proc", bind=True)
+def process_single_lead_task(self, lead: dict) -> dict:
     """
     Целерий-таска: обработка ОДНОГО лида.
     - Использует LeadRunner для отправки шаблона Thumbtack
@@ -39,6 +68,9 @@ def process_single_lead_task(lead: dict) -> dict:
     """
 
     async def _run():
+        # Соблюдаем rate limit перед обработкой лида
+        await wait_for_rate_limit()
+        
         runner = await _get_runner()
         result = await runner.process_lead(lead)
 
@@ -55,7 +87,7 @@ def process_single_lead_task(lead: dict) -> dict:
                 phone=ph,
                 defaults={"variables": vars_item},
             )
-            enqueue_ai_call.delay(str(phone_obj.id))
+            enqueue_ai_call.apply_async(args=[str(phone_obj.id)], queue="ai_calls")
             flow.mark(lk, "call_started")
             logger.info("Lead %s: телефон %s — отправлен на звонок", lk, ph)
         return result

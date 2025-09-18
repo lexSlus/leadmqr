@@ -32,17 +32,32 @@ class LeadRunner:
             user_data_dir=self.user_dir,
             headless=False,
             slow_mo=getattr(SETTINGS, "slow_mo", 0),
-            args=getattr(SETTINGS, "chromium_args", ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]),
+            args=getattr(SETTINGS, "chromium_args", [
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage", 
+                "--disable-gpu",
+                "--disable-images",
+                "--disable-plugins",
+                "--disable-extensions",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding"
+            ]),
             viewport=None,
         )
         self.page = await self._ctx.new_page()
+        
+        # Блокируем ненужные ресурсы для ускорения
+        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
+        
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
-                             wait_until="domcontentloaded", timeout=60000)
+                             wait_until="domcontentloaded", timeout=25000)
         self.bot = ThumbTackBot(self.page)
         if "login" in self.page.url.lower():
             await self.bot.login_if_needed()
             await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
-                                 wait_until="domcontentloaded", timeout=60000)
+                                 wait_until="domcontentloaded", timeout=25000)
         self._started = True
         logger.info("LeadRunner started")
 
@@ -61,10 +76,10 @@ class LeadRunner:
     async def _extract_phone_for_lead(self, lead_key: str) -> Optional[str]:
         rows = await self.bot.extract_phones_from_all_threads(store=None)
         for row in rows or []:
-            # if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
-            phone = str(row["phone"]).strip()
-            logger.info("PHONE FOUND for %s -> %s", lead_key, phone)
-            return phone
+            if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
+                phone = str(row["phone"]).strip()
+                logger.info("PHONE FOUND for %s -> %s", lead_key, phone)
+                return phone
 
         logger.info("PHONE NOT FOUND for %s (rows checked=%d)", lead_key, len(rows or []))
         return None
@@ -88,10 +103,15 @@ class LeadRunner:
 
         href = lead.get("href") or ""
 
+        logger.info("Processing lead %s, URL: %s", lk, self.page.url)
         await self.bot.open_leads()
+        logger.info("After open_leads, URL: %s", self.page.url)
         await self.bot.open_lead_details(lead)
-        await self.bot.send_template_message(dry_run=True)
+        logger.info("After open_lead_details, URL: %s", self.page.url)
+        await self.bot.send_template_message(dry_run=False)
+        logger.info("After send_template_message")
         phone = await self._extract_phone_for_lead(lk)
+        logger.info("Extracted phone for %s: %s", lk, phone)
 
         result: Dict[str, Any] = {
             "ok": True,
