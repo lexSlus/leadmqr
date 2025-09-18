@@ -42,11 +42,104 @@ class LeadRunner:
                 "--disable-extensions",
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding"
+                "--disable-renderer-backgrounding",
+                # Stealth mode args
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=VizDisplayCompositor",
+                "--disable-web-security",
+                "--disable-features=TranslateUI",
+                "--disable-ipc-flooding-protection",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-default-apps",
+                "--disable-popup-blocking",
+                "--disable-hang-monitor",
+                "--disable-prompt-on-repost",
+                "--disable-sync",
+                "--disable-translate",
+                "--metrics-recording-only",
+                "--no-report-upload",
+                "--safebrowsing-disable-auto-update",
+                "--enable-automation=false",
+                "--password-store=basic",
+                "--use-mock-keychain",
+                "--disable-component-extensions-with-background-pages",
+                "--disable-background-networking",
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-client-side-phishing-detection",
+                "--disable-crash-reporter",
+                "--disable-oopr-debug-crash-dump",
+                "--no-crash-upload",
+                "--disable-gpu-sandbox",
+                "--disable-software-rasterizer",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+                "--disable-ipc-flooding-protection"
             ]),
             viewport=None,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
         self.page = await self._ctx.new_page()
+        
+        # Stealth JavaScript для обхода детекции ботов
+        await self.page.add_init_script("""
+            // Убираем webdriver флаг
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            // Подделываем permissions API
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            
+            // Подделываем plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+            });
+            
+            // Подделываем languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            
+            // Убираем automation флаги
+            window.chrome = {
+                runtime: {},
+            };
+            
+            // Подделываем screen properties
+            Object.defineProperty(screen, 'availHeight', {
+                get: () => 1040,
+            });
+            Object.defineProperty(screen, 'availWidth', {
+                get: () => 1920,
+            });
+            
+            // Убираем automation из window
+            delete window.__playwright;
+            delete window.__pw_manual;
+            delete window.__webdriver_evaluate;
+            delete window.__webdriver_script_func;
+            delete window.__webdriver_script_fn;
+            delete window.__fxdriver_evaluate;
+            delete window.__driver_unwrapped;
+            delete window.__webdriver_unwrapped;
+            delete window.__driver_evaluate;
+            delete window.__selenium_unwrapped;
+            delete window.__selenium_evaluate;
+            delete window.__$fxdriver_evaluate;
+            delete window.__$fxdriver_unwrapped;
+            delete window.__fxdriver_unwrapped;
+            delete window.__webdriver_script_function;
+        """)
         
         # Блокируем ненужные ресурсы для ускорения
         await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())

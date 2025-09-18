@@ -37,11 +37,16 @@ class ThumbTackBot:
         return hashlib.md5((url or "").encode("utf-8")).hexdigest()
 
     async def login_if_needed(self):
-
+        # Добавляем случайные задержки для имитации человеческого поведения
+        import random
+        await asyncio.sleep(random.uniform(1, 3))
+        
         login_btn = self.page.get_by_role("link", name=re.compile(r"^Log in$", re.I))
         if await login_btn.count():
             await login_btn.first.click()
             await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
         login_candidates = [
             self.page.get_by_role(LOGIN_LINK["role"], name=LOGIN_LINK["name"]),
             self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"])
@@ -57,10 +62,25 @@ class ThumbTackBot:
             if await c.count():
                 await c.first.click()
                 break
+                
+        await asyncio.sleep(random.uniform(0.5, 1.5))
 
-        await self.page.get_by_label(EMAIL_LABEL).fill(SETTINGS.email)
-        await self.page.get_by_label(PASS_LABEL).fill(SETTINGS.password)
-        await self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"]).click()
+        # Имитируем человеческий ввод с задержками
+        email_field = self.page.get_by_label(EMAIL_LABEL)
+        await email_field.click()
+        await asyncio.sleep(random.uniform(0.2, 0.5))
+        await email_field.fill(SETTINGS.email)
+        await asyncio.sleep(random.uniform(0.3, 0.7))
+        
+        pass_field = self.page.get_by_label(PASS_LABEL)
+        await pass_field.click()
+        await asyncio.sleep(random.uniform(0.2, 0.5))
+        await pass_field.fill(SETTINGS.password)
+        await asyncio.sleep(random.uniform(0.5, 1.0))
+        
+        # Кликаем кнопку логина
+        login_button = self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"])
+        await login_button.click()
         
         # Увеличиваем таймаут для login и делаем fallback
         try:
@@ -69,6 +89,11 @@ class ThumbTackBot:
             logger.warning("networkidle timeout, trying domcontentloaded")
             await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
         
+        # Дополнительная проверка на капчу или блокировку
+        if "captcha" in self.page.url.lower() or "blocked" in self.page.url.lower():
+            logger.error("Detected captcha or blocking page: %s", self.page.url)
+            raise RuntimeError("Thumbtack detected bot - captcha or blocking page")
+            
         return True
 
 
