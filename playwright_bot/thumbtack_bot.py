@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import re
 
 logger = logging.getLogger("playwright_bot")
 
@@ -37,56 +38,10 @@ class ThumbTackBot:
         return hashlib.md5((url or "").encode("utf-8")).hexdigest()
 
     async def login_if_needed(self):
-        # Добавляем случайные задержки для имитации человеческого поведения
-        import random
-        await asyncio.sleep(random.uniform(3, 7))  # Увеличиваем задержки
-        
-        # Пробуем обойти капчу - меняем User Agent перед логином
-        await self.page.evaluate("""
-            Object.defineProperty(navigator, 'userAgent', {
-                get: () => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            });
-        """)
-        
-        # Очищаем cookies и localStorage
-        await self.page.context.clear_cookies()
-        await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
-        
-        # Дополнительные методы обхода детекции
-        await self.page.evaluate("""
-            try {
-                // Подделываем screen resolution
-                Object.defineProperty(screen, 'width', { get: () => 1920, configurable: true });
-                Object.defineProperty(screen, 'height', { get: () => 1080, configurable: true });
-                Object.defineProperty(screen, 'colorDepth', { get: () => 24, configurable: true });
-                
-                // Подделываем timezone
-                Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
-                    value: function() { return { timeZone: 'America/New_York' }; },
-                    configurable: true
-                });
-                
-                // Убираем все automation флаги (с проверкой)
-                if (window.chrome) delete window.chrome;
-                if (navigator.webdriver !== undefined) {
-                    delete navigator.webdriver;
-                }
-                Object.defineProperty(navigator, 'webdriver', { 
-                    get: () => undefined, 
-                    configurable: true 
-                });
-            } catch (e) {
-                console.log('Stealth setup error:', e);
-            }
-        """)
-        
-        await asyncio.sleep(random.uniform(2, 4))
-        
         login_btn = self.page.get_by_role("link", name=re.compile(r"^Log in$", re.I))
         if await login_btn.count():
             await login_btn.first.click()
             await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
-            await asyncio.sleep(random.uniform(0.5, 1.5))
             
         login_candidates = [
             self.page.get_by_role(LOGIN_LINK["role"], name=LOGIN_LINK["name"]),
@@ -103,181 +58,44 @@ class ThumbTackBot:
             if await c.count():
                 await c.first.click()
                 break
-                
-        await asyncio.sleep(random.uniform(0.5, 1.5))
 
-        # Имитируем человеческий ввод с задержками
         email_field = self.page.get_by_label(EMAIL_LABEL)
-        await email_field.click()
-        await asyncio.sleep(random.uniform(0.2, 0.5))
         await email_field.fill(SETTINGS.email)
-        await asyncio.sleep(random.uniform(0.3, 0.7))
         
         pass_field = self.page.get_by_label(PASS_LABEL)
-        await pass_field.click()
-        await asyncio.sleep(random.uniform(0.2, 0.5))
         await pass_field.fill(SETTINGS.password)
-        await asyncio.sleep(random.uniform(0.5, 1.0))
         
-        # Кликаем кнопку логина
         login_button = self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"])
         await login_button.click()
         
-        # Увеличиваем таймаут для login и делаем fallback
         try:
             await self.page.wait_for_load_state("networkidle", timeout=30000)
         except PWTimeoutError:
             logger.warning("networkidle timeout, trying domcontentloaded")
             await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-        
-        # Дополнительная проверка на капчу или блокировку
-        if "captcha" in self.page.url.lower() or "blocked" in self.page.url.lower():
-            logger.warning("Detected captcha, attempting to bypass...")
-            await self.bypass_captcha()
             
         return True
 
-    async def bypass_captcha(self):
-        """Попытка обхода капчи"""
-        logger.info("Attempting captcha bypass...")
-        
-        # Метод 1: Обновить страницу несколько раз
-        for i in range(3):
-            logger.info(f"Refresh attempt {i+1}/3")
-            await self.page.reload(wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(random.uniform(5, 10))
-            
-            # Проверяем исчезла ли капча
-            if "captcha" not in self.page.url.lower():
-                logger.info("Captcha disappeared after refresh")
-                return True
-        
-        # Метод 2: Попробовать другой URL
-        logger.info("Trying alternative approach...")
-        await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(random.uniform(3, 6))
-        
-        # Метод 3: Очистить все и попробовать снова
-        logger.info("Clearing all data and retrying...")
-        await self.page.context.clear_cookies()
-        await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
-        
-        # Метод 4: Попробовать через мобильный User Agent
-        logger.info("Trying mobile user agent...")
-        await self.page.set_extra_http_headers({
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
-        })
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
-        
-        # Метод 5: Попробовать через VPN имитацию
-        logger.info("Trying VPN simulation...")
-        await self.page.set_extra_http_headers({
-            "CF-IPCountry": "US",
-            "CF-Ray": "1234567890abcdef",
-            "X-Forwarded-For": "192.168.1.100"
-        })
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
-        
-        # Метод 6: Попробовать через Tor-like headers
-        logger.info("Trying Tor-like headers...")
-        await self.page.set_extra_http_headers({
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
-        })
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=30000)
-        
-        # Метод 7: Попробовать через разные домены
-        alternative_urls = [
-            "https://www.thumbtack.com/pro/dashboard",
-            "https://www.thumbtack.com/pro/leads",
-            "https://thumbtack.com/pro-leads"
-        ]
-        
-        for alt_url in alternative_urls:
-            logger.info(f"Trying alternative URL: {alt_url}")
-            try:
-                await self.page.goto(alt_url, wait_until="domcontentloaded", timeout=30000)
-                if "login" not in self.page.url.lower() and "captcha" not in self.page.url.lower():
-                    logger.info(f"Success with alternative URL: {alt_url}")
-                    return True
-            except Exception as e:
-                logger.warning(f"Failed alternative URL {alt_url}: {e}")
-                continue
-        
-        if "captcha" not in self.page.url.lower():
-            logger.info("Successfully bypassed captcha")
-            return True
-        
-        logger.error("Failed to bypass captcha")
-        raise RuntimeError("Unable to bypass Thumbtack captcha")
 
 
     async def open_leads(self):
-        # Альтернативный подход - пробуем разные способы доступа
         logger.info("[open_leads] Attempting to access pro-leads...")
         
-        # Способ 1: Прямой переход
-        try:
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-            logger.info("[open_leads] Direct access, URL: %s", self.page.url)
-            if "login" not in self.page.url.lower():
-                logger.info("[open_leads] Success! Direct access worked")
-                return
-        except Exception as e:
-            logger.warning("[open_leads] Direct access failed: %s", e)
-        
-        # Способ 2: Через главную страницу
-        try:
-            logger.info("[open_leads] Trying via main page...")
-            await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
-            await asyncio.sleep(3)  # Даем время на загрузку
-            
-            # Ищем ссылку на leads
-            leads_link = self.page.locator("a[href*='leads'], a:has-text('Leads')").first
-            if await leads_link.count() > 0:
-                logger.info("[open_leads] Found leads link, clicking...")
-                await leads_link.click()
-                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-                logger.info("[open_leads] Via link, URL: %s", self.page.url)
-            else:
-                # Fallback - прямой переход
-                await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-                logger.info("[open_leads] Fallback direct, URL: %s", self.page.url)
-        except Exception as e:
-            logger.warning("[open_leads] Via main page failed: %s", e)
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+        logger.info("[open_leads] Direct access, URL: %s", self.page.url)
         
         # Если все еще на login - пробуем авторизацию
         if "login" in self.page.url.lower():
             logger.info("[open_leads] Still on login, attempting authentication...")
-            try:
-                await self.login_if_needed()
-                await asyncio.sleep(3)
-                await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-                logger.info("[open_leads] After auth, URL: %s", self.page.url)
-            except Exception as e:
-                logger.error("[open_leads] Authentication failed: %s", e)
-                raise
+            await self.login_if_needed()
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            logger.info("[open_leads] After auth, URL: %s", self.page.url)
 
-        # На всякий случай ждём загрузку DOM
+        # Ждём загрузку DOM
         try:
             await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
         except PWTimeoutError:
             pass
-
-        if not self.page.url.rstrip("/").endswith("pro-leads"):
-            leads_link = self.page.get_by_role("link", name=re.compile(r"^Leads$", re.I))
-            if await leads_link.count():
-                await leads_link.first.click()
-                try:
-                    await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
-                except PWTimeoutError:
-                    pass
-        else:
-            logger.info("[open_leads] Уже на странице /pro-leads, URL: %s", self.page.url)
 
 
     async def list_new_leads(self) -> List[Dict]:

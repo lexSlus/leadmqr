@@ -59,70 +59,15 @@ class LeadRunner:
                 user_data_dir=profile_to_use,
                 headless=False,
                 slow_mo=getattr(SETTINGS, "slow_mo", 0),
-            args=getattr(SETTINGS, "chromium_args", [
-                "--no-sandbox", 
-                "--disable-setuid-sandbox", 
-                "--disable-dev-shm-usage", 
-                "--disable-gpu",
-                "--disable-images",
-                "--disable-plugins",
-                "--disable-extensions",
-                "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                # Stealth mode args
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=VizDisplayCompositor",
-                "--disable-web-security",
-                "--disable-features=TranslateUI",
-                "--disable-ipc-flooding-protection",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-default-apps",
-                "--disable-popup-blocking",
-                "--disable-hang-monitor",
-                "--disable-prompt-on-repost",
-                "--disable-sync",
-                "--disable-translate",
-                "--metrics-recording-only",
-                "--no-report-upload",
-                "--safebrowsing-disable-auto-update",
-                "--enable-automation=false",
-                "--password-store=basic",
-                "--use-mock-keychain",
-                "--disable-component-extensions-with-background-pages",
-                "--disable-background-networking",
-                "--disable-background-timer-throttling",
-                "--disable-renderer-backgrounding",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-client-side-phishing-detection",
-                "--disable-crash-reporter",
-                "--disable-oopr-debug-crash-dump",
-                "--no-crash-upload",
-                "--disable-gpu-sandbox",
-                "--disable-software-rasterizer",
-                "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                "--disable-features=TranslateUI,BlinkGenPropertyTrees",
-                "--disable-ipc-flooding-protection"
-            ]),
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            extra_http_headers={
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Cache-Control": "max-age=0",
-            },
-        )
+                args=[
+                    "--remote-debugging-port=9222",  # Debug port
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox", 
+                    "--disable-dev-shm-usage", 
+                    "--disable-gpu",
+                ],
+                viewport={"width": 1920, "height": 1080},
+            )
         except Exception as e:
             logger.error("Failed to launch browser with existing profile: %s", e)
             logger.info("Falling back to new profile...")
@@ -131,154 +76,17 @@ class LeadRunner:
                 user_data_dir=self.user_dir,
                 headless=False,
                 slow_mo=getattr(SETTINGS, "slow_mo", 0),
-                args=getattr(SETTINGS, "chromium_args", [
+                args=[
+                    "--remote-debugging-port=9222",  # Debug port
                     "--no-sandbox", 
                     "--disable-setuid-sandbox", 
                     "--disable-dev-shm-usage", 
                     "--disable-gpu",
-                    "--disable-images",
-                    "--disable-plugins",
-                    "--disable-extensions",
-                    "--disable-background-timer-throttling",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-renderer-backgrounding"
-                ]),
+                ],
                 viewport={"width": 1920, "height": 1080},
             )
         
         self.page = await self._ctx.new_page()
-        
-        # Агрессивный Stealth JavaScript для обхода детекции ботов
-        await self.page.add_init_script("""
-            // Убираем webdriver флаг
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-                configurable: true
-            });
-            
-            // Подделываем permissions API
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-            
-            // Подделываем plugins с реалистичными данными
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => ({
-                    length: 5,
-                    0: { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                    1: { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                    2: { name: 'Native Client', filename: 'internal-nacl-plugin' },
-                    3: { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll' },
-                    4: { name: 'Microsoft Edge PDF Viewer', filename: 'pdf' }
-                }),
-                configurable: true
-            });
-            
-            // Подделываем languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en'],
-                configurable: true
-            });
-            
-            // Подделываем platform
-            Object.defineProperty(navigator, 'platform', {
-                get: () => 'Win32',
-                configurable: true
-            });
-            
-            // Подделываем hardwareConcurrency
-            Object.defineProperty(navigator, 'hardwareConcurrency', {
-                get: () => 8,
-                configurable: true
-            });
-            
-            // Подделываем deviceMemory
-            Object.defineProperty(navigator, 'deviceMemory', {
-                get: () => 8,
-                configurable: true
-            });
-            
-            // Убираем automation флаги
-            window.chrome = {
-                runtime: {
-                    onConnect: undefined,
-                    onMessage: undefined,
-                    connect: undefined,
-                    sendMessage: undefined
-                },
-                loadTimes: function() { return {}; },
-                csi: function() { return {}; },
-                app: {}
-            };
-            
-            // Подделываем screen properties
-            Object.defineProperty(screen, 'availHeight', {
-                get: () => 1040,
-                configurable: true
-            });
-            Object.defineProperty(screen, 'availWidth', {
-                get: () => 1920,
-                configurable: true
-            });
-            
-            // Подделываем timezone
-            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {
-                value: function() {
-                    return { timeZone: 'America/New_York' };
-                }
-            });
-            
-            // Убираем automation из window
-            const propsToDelete = [
-                '__playwright', '__pw_manual', '__webdriver_evaluate', '__webdriver_script_func',
-                '__webdriver_script_fn', '__fxdriver_evaluate', '__driver_unwrapped',
-                '__webdriver_unwrapped', '__driver_evaluate', '__selenium_unwrapped',
-                '__selenium_evaluate', '__$fxdriver_evaluate', '__$fxdriver_unwrapped',
-                '__fxdriver_unwrapped', '__webdriver_script_function', '__nightmare',
-                '_phantom', '__phantom', 'callPhantom', '_selenium', 'calledSelenium',
-                '$cdc_asdjflasutopfhvcZLmcfl_', '$chrome_asyncScriptInfo',
-                '__$webdriverAsyncExecutor', 'webdriver', '__webdriverFunc',
-                '__webdriver_script_func', '__webdriver_script_fn', '__fxdriver_unwrapped',
-                '__driver_unwrapped', '__webdriver_unwrapped', '__selenium_unwrapped',
-                '__webdriver_evaluate', '__selenium_evaluate', '__fxdriver_evaluate'
-            ];
-            
-            propsToDelete.forEach(prop => {
-                try {
-                    delete window[prop];
-                } catch (e) {}
-            });
-            
-            // Подделываем getBoundingClientRect
-            const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-            Element.prototype.getBoundingClientRect = function() {
-                const rect = originalGetBoundingClientRect.call(this);
-                return {
-                    ...rect,
-                    x: Math.round(rect.x),
-                    y: Math.round(rect.y),
-                    width: Math.round(rect.width),
-                    height: Math.round(rect.height)
-                };
-            };
-            
-            // Подделываем Date для стабильности
-            const originalDate = Date;
-            Date = function(...args) {
-                if (args.length === 0) {
-                    return new originalDate(originalDate.now() + Math.random() * 1000);
-                }
-                return new originalDate(...args);
-            };
-            Date.now = () => originalDate.now() + Math.random() * 1000;
-            Date.prototype = originalDate.prototype;
-        """)
-        
-        # Блокируем ненужные ресурсы для ускорения
-        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
         
         # Сначала проверяем авторизацию на главной странице
         await self.page.goto(f"{SETTINGS.base_url}", wait_until="domcontentloaded", timeout=25000)
