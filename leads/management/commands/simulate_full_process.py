@@ -1,7 +1,6 @@
 from django.core.management.base import BaseCommand
 from leads.models import FoundPhone, ProcessedLead
 from ai_calls.models import AICall
-from ai_calls.tasks import enqueue_ai_call
 from leads.tasks import process_single_lead_task
 import uuid
 import random
@@ -37,7 +36,7 @@ class Command(BaseCommand):
         self.show_results()
 
     def simulate_lead(self, lead_number):
-        """Симулирует обработку одного лида"""
+        """Симулирует обработку одного лида через leads task"""
         
         # Генерируем тестовые данные
         lead_key = str(uuid.uuid4())[:8]
@@ -49,30 +48,39 @@ class Command(BaseCommand):
         self.stdout.write(f"   Phone: {phone}")
         self.stdout.write(f"   Name: {name}")
         
-        # 1. Создаем ProcessedLead (как будто LeadProducer нашел лид)
-        processed_lead = ProcessedLead.objects.create(key=lead_key)
-        self.stdout.write(f"   ✅ Created ProcessedLead")
-        
-        # 2. Создаем FoundPhone (как будто нашли телефон в messages)
-        found_phone = FoundPhone.objects.create(
-            lead_key=lead_key,
-            phone=phone,
-            variables={
+        # Создаем объект лида как будто его нашел LeadProducer
+        lead_data = {
+            "lead_key": lead_key,
+            "href": f"https://www.thumbtack.com/pro-leads/{lead_key}",
+            "phone": phone,  # Симулируем что телефон уже найден
+            "variables": {
                 "customer_name": name,
                 "service_type": random.choice(["Cleaning", "Plumbing", "Electrical", "Landscaping"]),
                 "location": random.choice(["New York", "Los Angeles", "Chicago", "Houston"]),
             }
-        )
-        self.stdout.write(f"   ✅ Created FoundPhone")
+        }
         
-        # 3. Отправляем задачу на AI звонок
+        # Отправляем в leads task - она сама создаст FoundPhone и вызовет AI звонок
         try:
-            result = enqueue_ai_call.apply_async(args=[str(found_phone.id)], queue="ai_calls")
-            self.stdout.write(f"   ✅ Enqueued AI call task: {result.id}")
+            result = process_single_lead_task.apply_async(args=[lead_data], queue="lead_proc")
+            self.stdout.write(f"   ✅ Enqueued lead processing task: {result.id}")
+            self.stdout.write(f"   📞 AI call will be triggered automatically by leads task")
         except Exception as e:
-            self.stdout.write(f"   ❌ Failed to enqueue AI call: {e}")
+            self.stdout.write(f"   ❌ Failed to enqueue lead task: {e}")
         
-        # 4. Проверяем создался ли AICall
+        # Ждем немного и проверяем результаты
+        import time
+        time.sleep(2)  # Даем время на обработку
+        
+        # Проверяем создался ли FoundPhone
+        found_phones = FoundPhone.objects.filter(lead_key=lead_key)
+        if found_phones.exists():
+            phone_obj = found_phones.first()
+            self.stdout.write(f"   ✅ Created FoundPhone: {phone_obj.phone}")
+        else:
+            self.stdout.write(f"   ⚠️  FoundPhone not created yet")
+        
+        # Проверяем создался ли AICall
         ai_calls = AICall.objects.filter(lead_key=lead_key)
         if ai_calls.exists():
             call = ai_calls.first()
