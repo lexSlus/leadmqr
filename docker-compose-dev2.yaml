@@ -142,6 +142,34 @@ services:
     entrypoint: []
     command: ["celery","-A","leadmqr","worker","-Q","ai_calls","-l","INFO","-c","4","-n","ai_calls@%h"]
 
+  # ========================================
+  # BROWSER SERVICE - ВСЕГДА ЗАПУЩЕН
+  # ========================================
+  browser:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    container_name: leadmqr_browser2
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks: [leadmqr_net2]
+    volumes:
+      - .:/app
+      - state_data2:/app/.data
+      - ./pw_profiles:/app/pw_profiles:rw
+      - ./debug:/app/debug
+    ports:
+      - "9222:9222"  # Chrome debug port
+    command: >
+      python playwright_bot/browser.py
+
 networks:
   leadmqr_net2:
     driver: bridge
