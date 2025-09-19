@@ -152,6 +152,8 @@ services:
     container_name: leadmqr_browser2
     restart: unless-stopped
     env_file: [.env]
+    environment:
+      - PYTHONPATH=/app
     depends_on:
       rabbitmq:
         condition: service_healthy
