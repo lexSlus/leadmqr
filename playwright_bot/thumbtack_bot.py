@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import logging
-import re
 
 logger = logging.getLogger("playwright_bot")
 
@@ -38,11 +37,11 @@ class ThumbTackBot:
         return hashlib.md5((url or "").encode("utf-8")).hexdigest()
 
     async def login_if_needed(self):
+
         login_btn = self.page.get_by_role("link", name=re.compile(r"^Log in$", re.I))
         if await login_btn.count():
             await login_btn.first.click()
             await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
-            
         login_candidates = [
             self.page.get_by_role(LOGIN_LINK["role"], name=LOGIN_LINK["name"]),
             self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"])
@@ -59,56 +58,131 @@ class ThumbTackBot:
                 await c.first.click()
                 break
 
-        email_field = self.page.get_by_label(EMAIL_LABEL)
-        await email_field.fill(SETTINGS.email)
+        # Ждем загрузки страницы и проверяем на капчу
+        await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
         
-        pass_field = self.page.get_by_label(PASS_LABEL)
-        await pass_field.fill(SETTINGS.password)
-        
-        login_button = self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"])
-        await login_button.click()
-        
+        # Проверяем на капчу перед заполнением полей
+        captcha_detected = False
         try:
-            await self.page.wait_for_load_state("networkidle", timeout=30000)
-        except PWTimeoutError:
-            logger.warning("networkidle timeout, trying domcontentloaded")
-            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+            captcha_frame = await self.page.wait_for_selector('iframe[src*="recaptcha"]', timeout=3000)
+            if captcha_frame:
+                captcha_detected = True
+                logger.warning("🤖 Обнаружена капча! Требуется ручное вмешательство.")
+                logger.warning("📋 Откройте браузер вручную и решите капчу, затем нажмите Enter...")
+                input("Нажмите Enter после решения капчи...")
+        except:
+            pass  # Капчи нет
+        
+        if not captcha_detected:
+            # Пробуем разные селекторы для полей
+            email_filled = False
+            password_filled = False
             
+            # Пробуем селекторы для email
+            for selector in [
+                'input[placeholder="Email"]',
+                'input[name="email"]',
+                'input[type="email"]',
+                'input[id*="email"]'
+            ]:
+                try:
+                    await self.page.fill(selector, SETTINGS.email, timeout=5000)
+                    email_filled = True
+                    logger.info(f"✅ Email заполнен через селектор: {selector}")
+                    break
+                except:
+                    continue
+            
+            # Пробуем селекторы для password
+            for selector in [
+                'input[placeholder="Password"]',
+                'input[name="password"]',
+                'input[type="password"]',
+                'input[id*="password"]'
+            ]:
+                try:
+                    await self.page.fill(selector, SETTINGS.password, timeout=5000)
+                    password_filled = True
+                    logger.info(f"✅ Password заполнен через селектор: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not email_filled or not password_filled:
+                logger.error(f"❌ Не удалось заполнить поля: email={email_filled}, password={password_filled}")
+                logger.error(f"📄 URL страницы: {self.page.url}")
+                logger.error(f"📄 Заголовок страницы: {await self.page.title()}")
+                return False
+            
+            # Пробуем разные селекторы для кнопки входа
+            login_clicked = False
+            for selector in [
+                'button:has-text("Log in")',
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button:has-text("Sign in")'
+            ]:
+                try:
+                    await self.page.click(selector, timeout=5000)
+                    login_clicked = True
+                    logger.info(f"✅ Кнопка входа нажата через селектор: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not login_clicked:
+                logger.error("❌ Не удалось найти кнопку входа")
+                return False
+        
+        # Проверяем на капчу
+        try:
+            captcha_frame = await self.page.wait_for_selector('iframe[src*="recaptcha"]', timeout=5000)
+            if captcha_frame:
+                logger.warning("🤖 Обнаружена капча! Требуется ручное вмешательство.")
+                logger.warning("📋 Откройте браузер вручную и решите капчу, затем нажмите Enter...")
+                input("Нажмите Enter после решения капчи...")
+        except:
+            pass  # Капчи нет, продолжаем
+        
+        await self.page.wait_for_load_state("networkidle", timeout=10000)
         return True
 
 
-
     async def open_leads(self):
-        logger.info("[open_leads] Attempting to access pro-leads...")
-        
+        # Открываем страницу лидов напрямую
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-        logger.info("[open_leads] Direct access, URL: %s", self.page.url)
-        
-        # Если все еще на login - пробуем авторизацию
+        logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
+        # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
         if "login" in self.page.url.lower():
-            logger.info("[open_leads] Still on login, attempting authentication...")
             await self.login_if_needed()
+            # await self.page.context.storage_state(path=SETTINGS.state_path)
             await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-            logger.info("[open_leads] After auth, URL: %s", self.page.url)
 
-        # Ждём загрузку DOM
+        # На всякий случай ждём загрузку DOM
         try:
             await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
         except PWTimeoutError:
             pass
+
+        if not self.page.url.rstrip("/").endswith("pro-leads"):
+            leads_link = self.page.get_by_role("link", name=re.compile(r"^Leads$", re.I))
+            if await leads_link.count():
+                await leads_link.first.click()
+                try:
+                    await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+                except PWTimeoutError:
+                    pass
+        else:
+            logger.info("[open_leads] Уже на странице /pro-leads, URL: %s", self.page.url)
 
 
     async def list_new_leads(self) -> List[Dict]:
         results: List[Dict] = []
         try:
             logger.info("[list_new_leads] URL before wait: %s", self.page.url)
-            await self.page.wait_for_load_state("networkidle", timeout=25000)
+            await self.page.wait_for_load_state("networkidle", timeout=15000)
         except Exception as e:
-            logger.warning("[list_new_leads] networkidle timeout, trying domcontentloaded: %s", e)
-            try:
-                await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-            except Exception as e2:
-                logger.warning("[list_new_leads] domcontentloaded also failed: %s", e2)
+            logger.warning("[list_new_leads] wait_for_load_state failed: %s", e)
         ctx = self.page
         for fr in self.page.frames:
             if "thumbtack.com" in fr.url and fr is not self.page:
@@ -169,12 +243,7 @@ class ThumbTackBot:
             await btn.wait_for(state="visible", timeout=5000)
             await btn.click()
 
-        # Увеличиваем таймаут для open_lead_details
-        try:
-            await self.page.wait_for_load_state("networkidle", timeout=25000)
-        except PWTimeoutError:
-            logger.warning("networkidle timeout in open_lead_details, using domcontentloaded")
-            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+        await self.page.wait_for_load_state("networkidle", timeout=15000)
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
@@ -388,4 +457,3 @@ class ThumbTackBot:
             total = max(total, await threads.count())
 
         return results
-

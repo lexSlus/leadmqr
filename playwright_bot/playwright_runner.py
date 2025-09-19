@@ -29,34 +29,45 @@ class LeadRunner:
     async def start(self):
         if self._started:
             return
-        self._pw = await async_playwright().start()
-
-        logger.info(f"Connecting to browser at {BROWSER_WS_ENDPOINT}...")
-        self._browser = await self._pw.chromium.connect(BROWSER_WS_ENDPOINT, timeout=60000)
-        logger.info("Successfully connected to the browser.")
-        storage_state_path = "/app/pw_profiles/auth_state.json" if os.path.exists("/app/pw_profiles/auth_state.json") else None
-
-
-
-        self._ctx = await self._browser.new_context(
-            storage_state=storage_state_path,
-            viewport={"width": 1920, "height": 1080},
-            locale=getattr(SETTINGS, "locale", "en-US"),
-        )
-        self.page = await self._ctx.new_page()
         
-        # Блокируем ненужные ресурсы для ускорения
-        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
-        
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
-                             wait_until="domcontentloaded", timeout=25000)
-        self.bot = ThumbTackBot(self.page)
-        if "login" in self.page.url.lower():
-            await self.bot.login_if_needed()
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads",
-                                 wait_until="domcontentloaded", timeout=25000)
-        self._started = True
-        logger.info("LeadRunner started")
+        try:
+            self._pw = await async_playwright().start()
+
+            logger.info(f"Connecting to browser at {BROWSER_WS_ENDPOINT}...")
+            self._browser = await self._pw.chromium.connect(BROWSER_WS_ENDPOINT, timeout=60000)
+            logger.info("Successfully connected to the browser.")
+            
+            storage_state_path = "/app/pw_profiles/auth_state.json"
+            if os.path.exists(storage_state_path):
+                logger.info(f"Using storage state from: {storage_state_path}")
+            else:
+                logger.warning(f"Storage state file not found at {storage_state_path}. Will attempt to log in manually if needed.")
+                storage_state_path = None
+
+            self._ctx = await self._browser.new_context(
+                storage_state=storage_state_path,
+                viewport={"width": 1920, "height": 1080},
+                locale=getattr(SETTINGS, "locale", "en-US"),
+            )
+            self.page = await self._ctx.new_page()
+            
+            await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
+            
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            
+            self.bot = ThumbTackBot(self.page)
+            if "login" in self.page.url.lower():
+                logger.warning("Not logged in, attempting manual login...")
+                await self.bot.login_if_needed()
+                await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            
+            self._started = True
+            logger.info("LeadRunner started successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to start LeadRunner: {e}", exc_info=True)
+            await self.close() # Обов'язково очищуємо ресурси при помилці
+            raise
 
     async def close(self):
         try:

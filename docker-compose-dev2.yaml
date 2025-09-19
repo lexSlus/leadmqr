@@ -1,0 +1,153 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: leadmqr_db2
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data2:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Другой порт чтобы не конфликтовать с dev1
+    networks: [leadmqr_net2]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: leadmqr_redis2
+    restart: unless-stopped
+    ports: ["6380:6379"]  # Другой порт
+    volumes: [redis_data2:/data]
+    networks: [leadmqr_net2]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: leadmqr_rabbitmq2
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+    ports:
+      - "5673:5672"     # Другой порт для брокера
+      - "15673:15672"   # Другой порт для RabbitMQ UI
+    volumes: [rabbitmq_data2:/var/lib/rabbitmq/]
+    networks: [leadmqr_net2]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    container_name: leadmqr_web2
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    ports: ["8001:8000"]  # Другой порт
+    networks: [leadmqr_net2]
+    command: >
+      python manage.py runserver 0.0.0.0:8000
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    container_name: leadmqr_celery_beat2
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [leadmqr_net2]
+    command: >
+      celery -A leadmqr beat -l info
+
+  # ========================================
+  # ПОЛНАЯ АРХИТЕКТУРА ДЛЯ UBUNTU
+  # ========================================
+  # Запускается celery_worker для обработки лидов
+  celery_worker:
+    build:
+      context: .
+      dockerfile: docker/celery/Dockerfile.celery_worker
+    container_name: leadmqr_celery_worker2
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks: [leadmqr_net2]
+    volumes:
+      - .:/app
+      - state_data2:/app/.data
+      - ./pw_profiles:/app/pw_profiles:rw
+      - ./debug:/app/debug
+    command: ["celery","-A","leadmqr","worker","-Q","lead_proc","-l","INFO","-c","2","-n","lead_proc@%h"]
+
+  # ========================================
+  # AI CALLS WORKER
+  # ========================================
+  celery_worker_ai:
+    build:
+      context: .
+      dockerfile: docker/celery/Dockerfile.celery_worker
+    container_name: leadmqr_ai_worker2
+    restart: unless-stopped
+    env_file: [.env]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks: [leadmqr_net2]
+    volumes:
+      - .:/app
+      - state_data2:/app/.data
+      - ./debug:/app/debug
+    entrypoint: []
+    command: ["celery","-A","leadmqr","worker","-Q","ai_calls","-l","INFO","-c","4","-n","ai_calls@%h"]
+
+networks:
+  leadmqr_net2:
+    driver: bridge
+
+volumes:
+  postgres_data2:
+  redis_data2:
+  rabbitmq_data2:
+  state_data2:

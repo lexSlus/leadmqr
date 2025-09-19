@@ -70,6 +70,8 @@ services:
         condition: service_healthy
     ports: ["8000:8000"]
     networks: [leadmqr_net]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: >
       python manage.py runserver 0.0.0.0:8000
 
@@ -91,76 +93,51 @@ services:
     command: >
       celery -A leadmqr beat -l info
 
-  celery_lead_producer:
-    build:
-      context: .
-      dockerfile: docker/celery/Dockerfile.celery_worker   # тот же образ, где Playwright установлен
-    container_name: leadmqr_lead_producer
-    restart: unless-stopped
-    shm_size: "1gb"
-    ports:
-      - "9222:9222"  # Chrome debug port
-    env_file: [ .env ]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      # те же переменные, что у celery_worker — чтобы профиль/локаль совпадали
-      - TT_USER_DATA_DIR=/app/pw_profiles
-      - TT_STATE_PATH=/app/.data/.tt_state.json
-      - TT_HEADLESS=false
-      - TT_LOCALE=en-US
-      - TT_TIMEZONE_ID=America/New_York
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-    networks: [ leadmqr_net ]
-    volumes:
-      - .:/app
-      - state_data:/app/.data
-      - ./pw_profiles:/app/pw_profiles:rw
-      - ./debug:/app/debug
-    command: python manage.py start_lead_runner
-    healthcheck:
-      # healthcheck на Python: проверяем heartbeat-ключ в Redis
-      test: [ "CMD", "python", "-c", "import os,sys,redis; r=redis.Redis(host=os.getenv('REDIS_HOST','redis'), port=int(os.getenv('REDIS_PORT','6379')), decode_responses=True); sys.exit(0 if r.get('tt:runner:hb') else 1)" ]
-      interval: 15s
-      timeout: 5s
-      retries: 4
+  # ========================================
+  # ГИБРИДНАЯ АРХИТЕКТУРА
+  # ========================================
+  # celery_lead_producer запускается ЛОКАЛЬНО на Mac:
+  # python start_local_producer.py
+  # 
+  # Это позволяет:
+  # - Отладка через chrome://inspect
+  # - Persistent context для максимальной скорости
+  # - Гибридная архитектура: Docker + локальный Playwright
 
-  celery_worker:
-    build:
-      context: .
-      dockerfile: docker/celery/Dockerfile.celery_worker
-    container_name: leadmqr_celery_worker
-    restart: unless-stopped
-    env_file: [.env]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      # можно оставить, но они уже прописаны в Dockerfile как ENV
-      - TT_USER_DATA_DIR=/app/pw_profiles
-      - TT_STATE_PATH=/app/.data/.tt_state.json
-      - TT_HEADLESS=false
-      - TT_LOCALE=en-US
-      - TT_TIMEZONE_ID=America/New_York
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-    networks: [leadmqr_net]
-    volumes:
-      - .:/app
-      - state_data:/app/.data
-      - ./pw_profiles:/app/pw_profiles:rw
-      - ./debug:/app/debug
+  # ========================================
+  # ЗАКОММЕНТИРОВАНО: НЕ НУЖЕН В НОВОЙ АРХИТЕКТУРЕ
+  # ========================================
+  # celery_worker больше не нужен, так как обработка лидов
+  # теперь происходит локально в run_continuous_loop()
+  
+  # celery_worker:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/celery/Dockerfile.celery_worker
+  #   container_name: leadmqr_celery_worker
+  #   restart: unless-stopped
+  #   env_file: [.env]
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   depends_on:
+  #     rabbitmq:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     db:
+  #       condition: service_healthy
+  #   networks: [leadmqr_net]
+  #   volumes:
+  #     - .:/app
+  #     - state_data:/app/.data
+  #     - ./pw_profiles:/app/pw_profiles:rw
+  #     - ./debug:/app/debug
+  #   command: ["celery","-A","leadmqr","worker","-Q","lead_proc","-l","INFO","-c","2","-n","lead_proc@%h"]
 
+
+  # ========================================
+  # AI CALLS WORKER - ОБРАБАТЫВАЕТ ТОЛЬКО AI ЗВОНКИ
+  # ========================================
   celery_worker_ai:
     build:
       context: .
@@ -194,3 +171,4 @@ volumes:
   state_data:
   playwright_cache:
   playwright_profile:
+

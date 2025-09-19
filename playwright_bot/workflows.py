@@ -1,172 +1,168 @@
-# import json
-# import os
-# import pathlib
-# from typing import Dict, Any
-# from playwright.async_api import async_playwright
-# from playwright_bot.config import SETTINGS
-# from playwright_bot.state_store import StateStore
-# from playwright_bot.thumbtack_bot import ThumbTackBot
-#
-#
-# async def run_single_pass() -> Dict[str, Any]:
-#     store = StateStore(
-#         path=getattr(SETTINGS, "state_path", ".tt_state.json"),
-#         cooldown_hours=getattr(SETTINGS, "cooldown_hours", 0)
-#     )
-#     async with async_playwright() as pw:
-#
-#         context = await pw.chromium.launch_persistent_context(
-#             user_data_dir=SETTINGS.user_data_dir,
-#             headless=False,
-#             slow_mo=SETTINGS.slow_mo,
-#             args=getattr(SETTINGS, "chromium_args", ["--no-sandbox"]),
-#             viewport=None,
-#         )
-#         try:
-#             p = await context.new_page()
-#             await p.goto("https://api.ipify.org?format=text", wait_until="domcontentloaded", timeout=20000)
-#             ip_txt = (await p.text_content("body")) or ""
-#             await p.close()
-#         except Exception as e:
-#             print("[DEBUG] IP check failed:", e)
-#         # --- end DEBUG ---
-#         print("PROFILE USED:", SETTINGS.user_data_dir, "exists:", os.path.isdir(SETTINGS.user_data_dir))
-#         try:
-#             state = await context.storage_state()
-#             pathlib.Path("/app/debug").mkdir(parents=True, exist_ok=True)
-#             with open("/app/debug/cookies.json", "w") as f:
-#                 json.dump(state.get("cookies", []), f, indent=2)
-#         except Exception as e:
-#             print("state dump err:", e)
-#
-#         page = await context.new_page()
-#         await page.goto("https://www.thumbtack.com/pro-inbox/", wait_until="domcontentloaded")
-#         # await page.screenshot(path="/app/debug/inbox.png", full_page=True)
-#         print("AFTER GOTO:", page.url)
-#
-#         bot = ThumbTackBot(page)
-#
-#         await bot.open_leads()
-#
-#         leads = await bot.list_new_leads()
-#         print(f"[DEBUG] found leads: {len(leads)}")
-#
-#         if not leads:
-#             return {
-#                 "ok": True,
-#                 "leads_processed": 0,
-#                 "messages_processed": 0,
-#                 "sent": [],
-#                 "phones": [],
-#                 "message": "No leads"
-#             }
-#         sent = []
-#         for lead in leads:
-#             try:
-#                 await bot.open_lead_details(lead)
-#                 lead_key = lead["lead_key"]
-#                 variables = {
-#                     "lead_id": lead_key,
-#                     "lead_url": f"{SETTINGS.base_url}{lead['href']}",
-#                     "name": lead.get("name") or "",
-#                     "category": lead.get("category") or "",
-#                     "location": lead.get("location") or "",
-#                     "source": "thumbtack",
-#                 }
-#                 # if store.was_lead_sent(lead_key):
-#                 #     sent.append({"index": lead["index"], "status": "skipped_already_sent", "lead_key": lead_key})
-#                 # else:
-#                 await bot.send_template_message(dry_run=True)
-#                 # store.mark_lead_sent(lead_key)
-#                 sent.append({
-#                     "index": lead["index"],
-#                     "status": "sent",
-#                     "lead_key": lead_key,
-#                     "variables": variables,
-#                 })
-#             except Exception as e:
-#                 sent.append({"index": lead["index"], "status": f"error: {e}"})
-#             finally:
-#                 await bot.open_leads()
-#
-#         # phones = await bot.extract_phones_from_all_threads(store=store)
-#         phones = await bot.extract_phones_from_all_threads()
-#         # await browser.close()
-#         return {
-#             "ok": True,
-#             "leads_processed": len(sent),
-#             "messages_processed": len(phones),
-#             "sent": sent,
-#             "phones": phones,
-#             "variables": [s.get("variables") for s in sent if "variables" in s],
-#         }
+import json
+import os
+import pathlib
+from typing import Dict, Any
+from playwright.async_api import async_playwright
+from playwright_bot.config import SETTINGS
+from playwright_bot.state_store import StateStore
+from playwright_bot.thumbtack_bot import ThumbTackBot
 
 
-# def run_until_leads() -> Dict[str, Any]:
-#     """
-#     Крутимся, пока не найдём хотя бы один лид:
-#       - опрашиваем /pro-leads каждые SETTINGS.poll_interval_sec
-#       - каждые 3 часа перезапускаем браузер
-#     """
-#     start_time = time.time()
-#     store = StateStore(
-#         path=getattr(SETTINGS, "state_path", ".tt_state.json"),
-#         cooldown_hours=getattr(SETTINGS, "cooldown_hours", 0)  # 0 = никогда не повторять
-#     )
-#
-#     while True:
-#         with BrowserManager() as bw:
-#             bot = ThumbTackBot(bw.page)
-#
-#             # ---------- Поллинг лидов ----------
-#             while True:
-#                 try:
-#                     # Рестарт по времени
-#                     if time.time() - start_time >= SETTINGS.restart_interval_sec:
-#                         start_time = time.time()
-#                         break  # выходим во внешний цикл -> рестарт браузера
-#
-#                     bot.open_leads()
-#                     leads = bot.list_new_leads()
-#                     if leads:
-#                         # ---------- Шаг 1: отправка сообщений по найденным лидам ----------
-#                         sent = []
-#                         for lead in leads:
-#                             try:
-#                                 bot.open_lead_details(lead)
-#                                 # анти‑спам: проверяем по URL карточки
-#                                 lead_url = bot.page.url
-#                                 lead_key = bot.lead_key_from_url(lead_url)
-#                                 if store.was_lead_sent(lead_key):
-#                                     sent.append({"index": lead["index"], "status": "skipped_already_sent"})
-#                                 else:
-#                                     bot.send_template_message()
-#                                     store.mark_lead_sent(lead_key)
-#                                     sent.append({"index": lead["index"], "status": "sent"})
-#                             except Exception as e:
-#                                 sent.append({"index": lead["index"], "status": f"error: {e}"})
-#                             finally:
-#                                 bot.open_leads()
-#
-#                         # ---------- Шаг 2: сбор телефонов из Messages ----------
-#                         phones = bot.extract_phones_from_all_threads(store=store)
-#
-#                         return {
-#                             "ok": True,
-#                             "leads_processed": len(sent),
-#                             "messages_processed": len(phones),
-#                             "sent": sent,
-#                             "phones": phones,
-#                         }
-#
-#                     # нет лидов — ждём и повторяем
-#                     time.sleep(SETTINGS.poll_interval_sec)
-#
-#                 except KeyboardInterrupt:
-#                     return {"ok": False, "message": "Stopped by user"}
-#                 except Exception:
-#                     # на случай временных сбоёв — подождём и продолжим
-#                     time.sleep(SETTINGS.poll_interval_sec)
+async def run_continuous_loop():
+    """
+    Запускает непрерывный цикл обработки лидов с persistent context
+    Браузер остается открытым и крутится постоянно!
+    """
+    import time
+    
+    store = StateStore(
+        path=getattr(SETTINGS, "state_path", ".tt_state.json"),
+        cooldown_hours=getattr(SETTINGS, "cooldown_hours", 0)
+    )
+    
+    from playwright.async_api import async_playwright
+    
+    async with async_playwright() as p:
+        # Используем launch_persistent_context для максимальной скорости
+        # Добавляем debug порт для отладки через chrome://inspect
+        debug_args = [
+            "--remote-debugging-port=9222",
+            "--remote-debugging-address=127.0.0.1",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-web-security",
+            "--disable-features=VizDisplayCompositor",
+            "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ]
+        
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=SETTINGS.user_data_dir,
+            headless=False,
+            slow_mo=SETTINGS.slow_mo,
+            args=debug_args,
+            viewport=None,
+        )
+        
+        print("🚀 Запущен persistent context - максимальная скорость!")
+        print("🔍 Debug порт: http://localhost:9222")
+        print("🌐 Chrome inspect: chrome://inspect")
+        print("🔄 Начинаем непрерывный цикл обработки лидов...")
+        
+        # Создаем новую страницу для работы
+        page = await context.new_page()
+        
+        cycle_count = 0
+        
+        # БЕСКОНЕЧНЫЙ ЦИКЛ - браузер не закрывается!
+        while True:
+            try:
+                cycle_count += 1
+                print(f"\n🔄 === ЦИКЛ #{cycle_count} ===")
+                
+                # IP check (debug) - только в первом цикле
+                if cycle_count == 1:
+                    ip_page = await context.new_page()
+                    await ip_page.goto("https://api.ipify.org?format=text", wait_until="domcontentloaded", timeout=20000)
+                    ip_txt = await ip_page.text_content("body") or ""
+                    await ip_page.close()
+                    print(f"🌐 IP адрес: {ip_txt}")
+                    print("PROFILE USED:", SETTINGS.user_data_dir, "exists:", os.path.isdir(SETTINGS.user_data_dir))
 
+                # Переходим на Thumbtack
+                await page.goto("https://www.thumbtack.com/pro-inbox/", wait_until="domcontentloaded")
+                print("AFTER GOTO:", page.url)
 
+                bot = ThumbTackBot(page)
+                
+                # Используем asyncio.run для async методов
+                import asyncio
+                
+                await bot.open_leads()
 
+                leads = await bot.list_new_leads()
+                print(f"[DEBUG] found leads: {len(leads)}")
+
+                if not leads:
+                    print("ℹ️ Лидов не найдено, ждем следующий цикл...")
+                    await asyncio.sleep(60)  # Пауза 1 минута если лидов нет
+                    continue
+
+                sent = []
+                for lead in leads:
+                    try:
+                        await bot.open_lead_details(lead)
+                        lead_key = lead["lead_key"]
+                        variables = {
+                            "lead_id": lead_key,
+                            "lead_url": f"{SETTINGS.base_url}{lead['href']}",
+                            "name": lead.get("name") or "",
+                            "category": lead.get("category") or "",
+                            "location": lead.get("location") or "",
+                            "source": "thumbtack",
+                        }
+                        
+                        await bot.send_template_message(dry_run=True)
+                        sent.append({
+                            "index": lead["index"],
+                            "status": "sent",
+                            "lead_key": lead_key,
+                            "variables": variables,
+                        })
+                    except Exception as e:
+                        sent.append({"index": lead["index"], "status": f"error: {e}"})
+                    finally:
+                        await bot.open_leads()
+
+                # Извлекаем телефоны
+                phones = await bot.extract_phones_from_all_threads()
+                
+                # Отправляем найденные телефоны в Celery для AI calls
+                ai_calls_enqueued = []
+                for phone_data in phones:
+                    try:
+                        from ai_calls.tasks import enqueue_ai_call
+                        
+                        # Создаем FoundPhone объект для передачи в Celery
+                        from leads.models import FoundPhone
+                        phone_obj, created = await asyncio.to_thread(
+                            FoundPhone.objects.get_or_create,
+                            lead_key=phone_data["lead_key"],
+                            phone=phone_data["phone"],
+                            defaults={"variables": phone_data["variables"]}
+                        )
+                        
+                        # Отправляем ID объекта в Celery
+                        task = enqueue_ai_call.delay(str(phone_obj.id))
+                        ai_calls_enqueued.append({
+                            "phone": phone_data.get("phone", ""),
+                            "task_id": task.id,
+                            "status": "enqueued",
+                            "phone_obj_id": phone_obj.id
+                        })
+                        print(f"📞 AI call enqueued for phone: {phone_data.get('phone', 'unknown')} (ID: {phone_obj.id})")
+                    except Exception as e:
+                        print(f"❌ Failed to enqueue AI call: {e}")
+                        ai_calls_enqueued.append({
+                            "phone": phone_data.get("phone", ""),
+                            "error": str(e),
+                            "status": "failed"
+                        })
+                
+                print(f"✅ Цикл #{cycle_count} завершен:")
+                print(f"   📋 Лидов обработано: {len(sent)}")
+                print(f"   📞 Сообщений найдено: {len(phones)}")
+                print(f"   🤖 AI calls отправлено: {len(ai_calls_enqueued)}")
+                
+            except KeyboardInterrupt:
+                print("🛑 Получен сигнал остановки...")
+                break
+            except Exception as e:
+                print(f"💥 Ошибка в цикле #{cycle_count}: {e}")
+                await asyncio.sleep(60)  # Пауза при ошибке
+            
+            # Пауза между циклами (5 минут)
+            print("⏳ Пауза 5 минут до следующего цикла...")
+            await asyncio.sleep(300)

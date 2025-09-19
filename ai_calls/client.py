@@ -26,7 +26,17 @@ class VocalyClient:
             response = requests.post(url, json=payload, headers=headers)
         elif method == 'GET':
             response = requests.get(url, headers=headers)
-        return response.json()
+        try:
+            if response.text.strip():
+                return response.json()
+            else:
+                # Пустой ответ - возможно успешный запрос без данных
+                logger.info("Received empty response, treating as success")
+                return {"status": "success", "message": "Empty response"}
+        except Exception as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            logger.error(f"Response text: {response.text}")
+            raise
 
 
     def create_call(self, agent_id: str, from_number: str, to_number: str, variables: dict = None):

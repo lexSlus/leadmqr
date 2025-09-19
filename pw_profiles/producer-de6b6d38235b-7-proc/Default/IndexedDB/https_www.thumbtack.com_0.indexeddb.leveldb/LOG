@@ -1,0 +1,25 @@
+2025/09/19-11:07:24.304 23ac80e Reusing MANIFEST /Users/lex/Documents/leadmqr/pw_profiles/producer-de6b6d38235b-7-proc/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/19-11:07:24.305 23ac80e Recovering log #8
+2025/09/19-11:07:24.305 23ac80e Reusing old log /Users/lex/Documents/leadmqr/pw_profiles/producer-de6b6d38235b-7-proc/Default/IndexedDB/https_www.thumbtack.com_0.indexeddb.leveldb/000008.log 
+2025/09/19-11:07:24.305 23ac80e Delete type=2 #7
+2025/09/19-11:07:24.323 23ac812 Level-0 table #13: started
+2025/09/19-11:07:24.324 23ac812 Level-0 table #13: 652 bytes OK
+2025/09/19-11:07:24.326 23ac812 Delete type=0 #8
+2025/09/19-11:07:24.326 23ac80e Manual compaction at level-0 from '\x00\x05\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x06\x00\x00\x00' @ 0 : 0; will stop at '\x00\x05\x00\x00\x05' @ 116 : 1
+2025/09/19-11:07:24.326 23ac80e Compacting 1@0 + 1@1 files
+2025/09/19-11:07:24.327 23ac80e Generated table #14@0: 46 keys, 1252 bytes
+2025/09/19-11:07:24.327 23ac80e Compacted 1@0 + 1@1 files => 1252 bytes
+2025/09/19-11:07:24.328 23ac80e compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-11:07:24.328 23ac80e Delete type=2 #13
+2025/09/19-11:07:24.328 23ac80e Manual compaction at level-0 from '\x00\x05\x00\x00\x05' @ 116 : 1 .. '\x00\x06\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/19-11:07:24.329 23ac812 Level-0 table #16: started
+2025/09/19-11:07:24.329 23ac812 Level-0 table #16: 677 bytes OK
+2025/09/19-11:07:24.330 23ac812 Delete type=0 #12
+2025/09/19-11:07:24.330 23ac812 Delete type=2 #10
+2025/09/19-11:07:24.330 23ac80e Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at '\x00\x06\x00\x00\x05' @ 133 : 1
+2025/09/19-11:07:24.330 23ac80e Compacting 1@0 + 1@1 files
+2025/09/19-11:07:24.330 23ac80e Generated table #17@0: 46 keys, 1252 bytes
+2025/09/19-11:07:24.330 23ac80e Compacted 1@0 + 1@1 files => 1252 bytes
+2025/09/19-11:07:24.331 23ac80e compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/19-11:07:24.331 23ac80e Delete type=2 #16
+2025/09/19-11:07:24.331 23ac80e Manual compaction at level-0 from '\x00\x06\x00\x00\x05' @ 133 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)
