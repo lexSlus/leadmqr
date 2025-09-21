@@ -6,8 +6,8 @@ from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
 from playwright_bot.state_store import StateStore
 from playwright_bot.thumbtack_bot import ThumbTackBot
+from playwright_bot.utils import unique_user_data_dir, FlowTimer
 
-from playwright_bot.utils import unique_user_data_dir
 
 logger = logging.getLogger("playwright_bot")
 
@@ -25,6 +25,7 @@ class LeadRunner:
         self.page = None
         self.bot: Optional[ThumbTackBot] = None
         self.user_dir = unique_user_data_dir("worker")
+        self.flow = FlowTimer()
 
     async def start(self):
         if self._started:
@@ -69,6 +70,7 @@ class LeadRunner:
             await self.close() # Обов'язково очищуємо ресурси при помилці
             raise
 
+
     async def close(self):
         try:
             if self._ctx:
@@ -101,38 +103,61 @@ class LeadRunner:
           - (опц.) достаём телефон в Inbox,
           - возвращаем минимально нужные данные.
         """
-
-        if not self._started:
-            await self.start()
-
         lk = lead.get("lead_key")
         if not lk:
+            logger.error("process_lead: no lead_key in lead: %s", lead)
             return {"ok": False, "reason": "no lead_key", "lead": lead}
 
-        href = lead.get("href") or ""
+        try:
+            self.flow.mark(lk, "task_start")
+            
+            if not self._started:
+                await self.start()
 
-        logger.info("Processing lead %s, URL: %s", lk, self.page.url)
-        await self.bot.open_leads()
-        logger.info("After open_leads, URL: %s", self.page.url)
-        await self.bot.open_lead_details(lead)
-        logger.info("After open_lead_details, URL: %s", self.page.url)
-        await self.bot.send_template_message(dry_run=False)
-        logger.info("After send_template_message")
-        phone = await self._extract_phone_for_lead(lk)
-        logger.info("Extracted phone for %s: %s", lk, phone)
+            href = lead.get("href") or ""
+            logger.info("LeadRunner: processing lead %s, URL: %s", lk, self.page.url)
+            
+            # Шаг 1: Открываем страницу лидов
+            await self.bot.open_leads()
+            logger.info("LeadRunner: opened /leads, URL: %s", self.page.url)
+            
+            # Шаг 2: Открываем детали лида
+            await self.bot.open_lead_details(lead)
+            logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
+            
+            # Шаг 3: Отправляем шаблонное сообщение
+            await self.bot.send_template_message(dry_run=True)
+            logger.info("LeadRunner: sent template message")
+            
+            # Шаг 4: Извлекаем телефон
+            phone = await self._extract_phone_for_lead(lk)
+            if phone:
+                self.flow.mark(lk, "phone_found")
+                logger.info("LeadRunner: phone found for %s: %s", lk, phone)
+            else:
+                logger.warning("LeadRunner: no phone found for %s", lk)
 
-        result: Dict[str, Any] = {
-            "ok": True,
-            "lead_key": lk,
-            "phone": phone,
-            "variables": {
-                "lead_id": lk,
-                "lead_url": f"{SETTINGS.base_url}{href}",
-                "name": lead.get("name") or "",
-                "category": lead.get("category") or "",
-                "location": lead.get("location") or "",
-            },
-        }
-        logger.info(f"result - {result}")
-        logger.info("process_lead: phone for %s -> %s", lk, phone or "NONE")
-        return result
+            result: Dict[str, Any] = {
+                "ok": True,
+                "lead_key": lk,
+                "phone": phone,
+                "variables": {
+                    "lead_id": lk,
+                    "lead_url": f"{SETTINGS.base_url}{href}",
+                    "name": lead.get("name") or "",
+                    "category": lead.get("category") or "",
+                    "location": lead.get("location") or "",
+                    "source": "thumbtack",
+                },
+            }
+            
+            # Логируем телеметрию
+            durations = self.flow.durations(lk)
+            logger.info("LeadRunner: lead %s processed in %.3fs (durations: %s)", 
+                       lk, durations.get("total_s", 0), durations)
+            
+            return result
+            
+        except Exception as e:
+            logger.error("LeadRunner: error processing lead %s: %s", lk, e, exc_info=True)
+            return {"ok": False, "error": str(e), "lead_key": lk, "lead": lead}

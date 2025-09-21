@@ -9,6 +9,14 @@ SHOW_PHONE = {
     "role": "button",
     "name": re.compile(r"(click to show phone number|show phone number)", re.I),
 }
+# Альтернативный селектор для кнопки показа телефона
+SHOW_PHONE_BUTTON = "button:has-text('Click to show phone number')"
+# Селектор для кнопки по классу (из HTML)
+SHOW_PHONE_BUTTON_CLASS = "button._3HFh8Wm0kL8FRvqW7u0LOA"
+# Селектор для уже показанного телефона
+PHONE_LINK = "a[href^='tel:']"
+# Селектор для скрытого телефона (с классом dn)
+HIDDEN_PHONE_LINK = "div.dn a[href^='tel:']"
 MESSAGE_INPUT_PLACEHOLDER = re.compile(
     r"(answer any questions|type your message|message)", re.I
 )

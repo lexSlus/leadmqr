@@ -37,11 +37,7 @@ class ThumbTackBot:
         return hashlib.md5((url or "").encode("utf-8")).hexdigest()
 
     async def login_if_needed(self):
-
-        login_btn = self.page.get_by_role("link", name=re.compile(r"^Log in$", re.I))
-        if await login_btn.count():
-            await login_btn.first.click()
-            await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
+        # Проверяем, нужен ли логин - ищем кнопки входа
         login_candidates = [
             self.page.get_by_role(LOGIN_LINK["role"], name=LOGIN_LINK["name"]),
             self.page.get_by_role(LOGIN_BTN["role"], name=LOGIN_BTN["name"])
@@ -53,98 +49,87 @@ class ThumbTackBot:
         if not SETTINGS.email or not SETTINGS.password:
             raise RuntimeError("No credentials provided TT_EMAIL and TT_PASSWORD")
 
+        # Кликаем только по одной кнопке входа (не по ссылке Log in)
         for c in login_candidates:
             if await c.count():
                 await c.first.click()
                 break
 
-        # Ждем загрузки страницы и проверяем на капчу
+        # Ждем загрузки страницы логина
         await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
         
-        # Проверяем на капчу перед заполнением полей
-        captcha_detected = False
-        try:
-            captcha_frame = await self.page.wait_for_selector('iframe[src*="recaptcha"]', timeout=3000)
-            if captcha_frame:
-                captcha_detected = True
-                logger.warning("🤖 Обнаружена капча! Требуется ручное вмешательство.")
-                logger.warning("📋 Откройте браузер вручную и решите капчу, затем нажмите Enter...")
-                input("Нажмите Enter после решения капчи...")
-        except:
-            pass  # Капчи нет
+        # Заполняем поля логина
+        email_filled = False
+        password_filled = False
         
-        if not captcha_detected:
-            # Пробуем разные селекторы для полей
-            email_filled = False
-            password_filled = False
-            
-            # Пробуем селекторы для email
-            for selector in [
-                'input[placeholder="Email"]',
-                'input[name="email"]',
-                'input[type="email"]',
-                'input[id*="email"]'
-            ]:
-                try:
-                    await self.page.fill(selector, SETTINGS.email, timeout=5000)
+        # Пробуем селекторы для email
+        for selector in [
+            'input[placeholder="Email"]',
+            'input[name="email"]',
+            'input[type="email"]',
+            'input[id*="email"]'
+        ]:
+            try:
+                # Сначала быстро проверим, есть ли элемент
+                if await self.page.locator(selector).count() > 0:
+                    await self.page.fill(selector, SETTINGS.email, timeout=2000)
                     email_filled = True
-                    logger.info(f"✅ Email заполнен через селектор: {selector}")
+                    logger.info(f" Email заполнен через селектор: {selector}")
                     break
-                except:
-                    continue
-            
-            # Пробуем селекторы для password
-            for selector in [
-                'input[placeholder="Password"]',
-                'input[name="password"]',
-                'input[type="password"]',
-                'input[id*="password"]'
-            ]:
-                try:
-                    await self.page.fill(selector, SETTINGS.password, timeout=5000)
+            except:
+                continue
+        
+        # Пробуем селекторы для password
+        for selector in [
+            'input[placeholder="Password"]',
+            'input[name="password"]',
+            'input[type="password"]',
+            'input[id*="password"]'
+        ]:
+            try:
+                # Сначала быстро проверим, есть ли элемент
+                if await self.page.locator(selector).count() > 0:
+                    await self.page.fill(selector, SETTINGS.password, timeout=2000)
                     password_filled = True
-                    logger.info(f"✅ Password заполнен через селектор: {selector}")
+                    logger.info(f" Password заполнен через селектор: {selector}")
                     break
-                except:
-                    continue
-            
-            if not email_filled or not password_filled:
-                logger.error(f"❌ Не удалось заполнить поля: email={email_filled}, password={password_filled}")
-                logger.error(f"📄 URL страницы: {self.page.url}")
-                logger.error(f"📄 Заголовок страницы: {await self.page.title()}")
-                return False
-            
-            # Пробуем разные селекторы для кнопки входа
-            login_clicked = False
-            for selector in [
-                'button:has-text("Log in")',
-                'button[type="submit"]',
-                'input[type="submit"]',
-                'button:has-text("Sign in")'
-            ]:
-                try:
-                    await self.page.click(selector, timeout=5000)
+            except:
+                continue
+        
+        if not email_filled or not password_filled:
+            logger.error(f" Не удалось заполнить поля: email={email_filled}, password={password_filled}")
+            logger.error(f" URL страницы: {self.page.url}")
+            logger.error(f"= Заголовок страницы: {await self.page.title()}")
+            return False
+        
+        # Пробуем разные селекторы для кнопки входа
+        login_clicked = False
+        for selector in [
+            'button:has-text("Log in")',
+            'button[type="submit"]',
+            'input[type="submit"]',
+            'button:has-text("Sign in")'
+        ]:
+            try:
+                # Сначала быстро проверим, есть ли элемент
+                if await self.page.locator(selector).count() > 0:
+                    await self.page.click(selector, timeout=2000)
                     login_clicked = True
                     logger.info(f"✅ Кнопка входа нажата через селектор: {selector}")
                     break
-                except:
-                    continue
-            
-            if not login_clicked:
-                logger.error("❌ Не удалось найти кнопку входа")
-                return False
+            except:
+                continue
         
-        # Проверяем на капчу
+        if not login_clicked:
+            logger.error(" Не удалось найти кнопку входа")
+            return False
+        
+        # Ждем загрузки страницы после логина
         try:
-            captcha_frame = await self.page.wait_for_selector('iframe[src*="recaptcha"]', timeout=5000)
-            if captcha_frame:
-                logger.warning("🤖 Обнаружена капча! Требуется ручное вмешательство.")
-                logger.warning("📋 Откройте браузер вручную и решите капчу, затем нажмите Enter...")
-                input("Нажмите Enter после решения капчи...")
+            await self.page.wait_for_load_state("networkidle", timeout=5000)
         except:
-            pass  # Капчи нет, продолжаем
-        
-        await self.page.wait_for_load_state("networkidle", timeout=10000)
+            # Если networkidle не сработал, ждем хотя бы domcontentloaded
+            await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
         return True
 
 
@@ -152,11 +137,14 @@ class ThumbTackBot:
         # Открываем страницу лидов напрямую
         await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
         logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
+        
         # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
         if "login" in self.page.url.lower():
+            logger.info("[open_leads] Redirected to login, authenticating...")
             await self.login_if_needed()
-            # await self.page.context.storage_state(path=SETTINGS.state_path)
+            # После логина снова идем на страницу лидов
             await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            logger.info("[open_leads] After login, URL сейчас: %s", self.page.url)
 
         # На всякий случай ждём загрузку DOM
         try:
@@ -244,6 +232,7 @@ class ThumbTackBot:
             await btn.click()
 
         await self.page.wait_for_load_state("networkidle", timeout=15000)
+
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
@@ -357,51 +346,41 @@ class ThumbTackBot:
     def _threads(self):
         return self.page.locator("a[href^='/pro-inbox/messages']")
 
+
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
-        # клик "Click to show phone number"
-        logger.info("Начинаем поиск телефона в текущем треде. URL: %s", self.page.url)
-        show_phone = self.page.get_by_role(SHOW_PHONE["role"], name=SHOW_PHONE["name"])
-        logger.info("Кнопка number show phone: %s", show_phone.count())
+        """
+        Extracts phone number from current message thread.
+        Searches for existing phone numbers without clicking any buttons.
+        Returns cleaned phone number (digits and + only) or None if not found.
+        """
+        logger.info("Searching for phone number in thread: %s", self.page.url)
 
-        if await show_phone.count():
-            logger.info(f"Найдено {show_phone.count()} ссылок с tel:")
-            try:
-                await show_phone.first.scroll_into_view_if_needed()
-                await show_phone.first.click()
-                logger.info("Клик по show phone выполнен")
-            except Exception as e:
-                logger.warning("Не удалось кликнуть show phone: %s", e)
-
-        # ждать tel:
+        # Method 1: Look for tel: links (most reliable)
         tel_link = self.page.locator("a[href^='tel:']")
-        logger.info("Ссылок tel: найдено: %s", tel_link.count())
-
-        if await tel_link.count() == 0:
-            logger.info("Ждём появления tel:...")
+        if await tel_link.count() > 0:
             try:
-                await tel_link.first.wait_for(timeout=5000)
-                logger.info("После ожидания ссылок tel: %s", )
-
-            except Exception:
-                pass
-
-        if await tel_link.count():
-            raw = (await tel_link.first.get_attribute("href") or "").replace("tel:", "")
-            logger.info(f"Телефон найден: {raw}")
-
-            return re.sub(r"[^\d+]", "", raw)
-
-        # fallback текстом
-        logger.info("Пробуем фолбэк по тексту (PHONE_REGEX)")
-        node = self.page.get_by_text(re.compile(PHONE_REGEX))
-        logger.info("Нод по PHONE_REGEX: %s", node.count())
-
-        if await node.count():
-            txt = (await node.first.text_content() or "").strip()
-            logger.info("Телефон найден текстом: txt=%r -> %r", txt)
-
-            return re.sub(r"[^\d+]", "", txt) or txt
-
+                raw_href = await tel_link.first.get_attribute("href") or ""
+                phone = raw_href.replace("tel:", "")
+                if phone:
+                    cleaned_phone = re.sub(r"[^\d+]", "", phone)
+                    logger.info(f"Phone found in tel link: {phone} -> {cleaned_phone}")
+                    return cleaned_phone
+            except Exception as e:
+                logger.error(f"Error extracting tel href: {e}")
+        
+        # Method 2: Look for phone text in specific element class
+        phone_text_element = self.page.locator(".IUE7kXgIsvED2G8vml4Wu")
+        if await phone_text_element.count() > 0:
+            try:
+                phone_text = await phone_text_element.first.text_content() or ""
+                if phone_text:
+                    cleaned_phone = re.sub(r"[^\d+]", "", phone_text)
+                    logger.info(f"Phone found in text element: {phone_text} -> {cleaned_phone}")
+                    return cleaned_phone
+            except Exception as e:
+                logger.error(f"Error extracting text content: {e}")
+        
+        logger.warning("Phone number not found in this thread")
         return None
 
 
@@ -414,13 +393,10 @@ class ThumbTackBot:
 
         results: List[Dict[str, Any]] = []
         total = await threads.count()
-        logger.info("extract_phones_from_all_threads: found %d threads", total)
-        
         for i in range(total):
             row = threads.nth(i)
             href = await row.get_attribute("href") or ""
             lead_key = self.lead_key_from_url(href)
-            logger.info("Thread %d: href=%s, lead_key=%s", i, href, lead_key)
 
             # анти-спам по тредам
             if store is not None and store.should_skip_thread(href):
@@ -429,7 +405,12 @@ class ThumbTackBot:
                     "href": href,
                     "lead_key": lead_key,
                     "phone": store.phone_for_thread(href),
-                    "status": "skipped_already_seen"
+                    "status": "skipped_already_seen",
+                    "variables": {
+                        "lead_id": lead_key,
+                        "lead_url": f"https://www.thumbtack.com{href}",
+                        "source": "thumbtack"
+                    }
                 })
                 continue
 
@@ -437,12 +418,15 @@ class ThumbTackBot:
             await row.click()
             try:
                 await self.page.wait_for_url(re.compile(r"/pro-inbox/messages/\d+"), timeout=12000)
-            except Exception:
-                pass
+                logger.info("✅ URL изменился, ждем загрузки контента...")
+                # Ждем загрузки контента страницы
+                await self.page.wait_for_load_state("domcontentloaded")
+                await self.page.wait_for_timeout(2000)  # Дополнительная пауза для загрузки
+                logger.info("✅ Контент загружен, извлекаем телефон...")
+            except Exception as e:
+                logger.warning("⚠️ Не удалось дождаться загрузки: %s", e)
 
             phone = await self._show_and_extract_in_current_thread()
-            logger.info("Thread %d result: lead_key=%s, phone=%s", i, lead_key, phone)
-            
             if store is not None:
                 store.mark_thread_seen(href, phone)
 
@@ -450,7 +434,12 @@ class ThumbTackBot:
                 "index": i,
                 "href": href,
                 "lead_key": lead_key,
-                "phone": phone
+                "phone": phone,
+                "variables": {
+                    "lead_id": lead_key,
+                    "lead_url": f"https://www.thumbtack.com{href}",
+                    "source": "thumbtack"
+                }
             })
             await self.open_messages()
             threads = self._threads()

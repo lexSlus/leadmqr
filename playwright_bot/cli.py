@@ -11,18 +11,19 @@ USER_DATA_DIR = "./playwright_profile"
 
 
 
-os.environ["EMAIL"] = "your_email@example.com"
-os.environ["PASSWORD"] = "your_password_here"
-os.environ["BASE_URL"] = "https://www.thumbtack.com"
-os.environ["LEADS_PATH"] = "/leads"
+# Правильные переменные окружения с префиксом TT_
+os.environ["TT_EMAIL"] = "wkononov@gmail.com"
+os.environ["TT_PASSWORD"] = "Oleg@2025"
+os.environ["TT_BASE"] = "https://www.thumbtack.com"
+os.environ["TT_LEADS_PATH"] = "/leads"
 
 # хранилище профиля/сессии локально
-os.environ["USER_DATA_DIR"] = "./.data/tt_profile"
-os.environ["STORAGE_STATE"] = "./.data/state.json"
+os.environ["TT_USER_DATA_DIR"] = "./.data/tt_profile"
+os.environ["TT_STORAGE_STATE"] = "./.data/state.json"
 
 # браузер
-os.environ["HEADLESS"] = "False"
-os.environ["SLOW_MO"] = "150"
+os.environ["TT_HEADLESS"] = "False"
+os.environ["TT_SLOW_MO"] = "150"
 
 async def main():
     result = await run_single_pass()

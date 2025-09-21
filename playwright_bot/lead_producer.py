@@ -1,60 +1,152 @@
-import asyncio
-import logging
+# playwright_bot/lead_producer.py
+import asyncio, logging
+from typing import Optional, Dict, Any, List
+import redis.asyncio as aioredis
+from django.conf import settings as dj_settings
 from playwright.async_api import async_playwright
+from celery import current_app as celery_app
 
-# Настраиваем логирование, чтобы видеть сообщения
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] playwright_bot: %(message)s')
+from playwright_bot.config import SETTINGS
+from playwright_bot.thumbtack_bot import ThumbTackBot
+from playwright_bot.utils import unique_user_data_dir, FlowTimer
+
+
 log = logging.getLogger("playwright_bot")
 
-async def main():
-    """
-    Запускает Chrome с debug портом через launchServer() и подключается к нему через connectOverCDP.
-    Это правильный способ согласно документации Playwright.
-    """
-    log.warning("!!! ЗАПУЩЕН СКРИПТ С launchServer + connectOverCDP (v5) !!!")
-    
-    try:
-        playwright = await async_playwright().start()
-        
-        # Запускаем Chrome с debug портом
-        log.info("Запускаем Chrome с debug портом...")
-        context = await playwright.chromium.launch_persistent_context(
-            user_data_dir="/app/pw_profiles/debug-test-new",
-            headless=False,  # False для видимости в chrome://inspect
-            args=[
-                "--remote-debugging-port=9222",
-                "--remote-debugging-address=0.0.0.0",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ]
-        )
-        
-        log.info("Chrome запущен с debug портом 9222")
-        
-        # Создаем несколько страниц для тестирования
-        page1 = await context.new_page()
-        await page1.goto("https://google.com")
-        
-        page2 = await context.new_page()
-        await page2.goto("https://example.com")
-        
-        page3 = await context.new_page()
-        await page3.goto("about:blank")
-        
-        log.warning("!!! БРАУЗЕР ЗАПУЩЕН И ЖДЕТ. ПРОВЕРЯЙТЕ localhost:9222 или chrome://inspect !!!")
-        log.info(f"Открыто {len(context.pages)} страниц")
-        
-        # Бесконечный цикл, чтобы контейнер не завершался
-        while True:
-            await asyncio.sleep(60)
-            log.info("... browser is still running ...")
-            
-    except Exception as e:
-        log.error(f"Критическая ошибка в тестовом скрипте: {e}", exc_info=True)
-        # Ждем, чтобы успеть прочитать лог
-        await asyncio.sleep(300)
+HEARTBEAT_KEY = "tt:runner:hb"
+HEARTBEAT_TTL = 15
+LEASE_KEY     = "tt:runner:lease"
+LEASE_TTL     = 30
+ENQ_TTL       = 90
 
-if __name__ == "__main__":
-    asyncio.run(main())
+class LeadProducer:
+    def __init__(self):
+        self._pw = None
+        self._ctx = None
+        self.page = None
+        self.bot: Optional[ThumbTackBot] = None
+        self.stop_evt = asyncio.Event()
+        self.redis: Optional[aioredis.Redis] = None
+        self.user_dir = unique_user_data_dir("producer")
+        self.flow = FlowTimer(redis_url=dj_settings.REDIS_URL)
+
+    async def _acquire(self) -> bool:
+        return bool(await self.redis.set(LEASE_KEY, "1", ex=LEASE_TTL, nx=True))
+
+    async def _renew(self):  await self.redis.expire(LEASE_KEY, LEASE_TTL)
+    async def _hb(self):     await self.redis.set(HEARTBEAT_KEY, "1", ex=HEARTBEAT_TTL)
+
+
+    async def start(self):
+        self.redis = await aioredis.from_url(dj_settings.REDIS_URL, decode_responses=True)
+        if not await self._acquire():
+            log.info("LeadProducer: lease exists, skip")
+            return
+
+        self._pw = await async_playwright().start()
+        
+        self._ctx = await self._pw.chromium.launch_persistent_context(
+            user_data_dir=self.user_dir,
+            headless=False,  # Используем Xvfb для Docker
+            args=[
+                "--remote-debugging-port=9222",  # Debug port
+                "--remote-debugging-address=0.0.0.0",
+                "--no-sandbox", 
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage", 
+                "--disable-gpu",
+            ],
+            viewport={"width": 1920, "height": 1080},
+        )
+        self.page = await self._ctx.new_page()
+        
+        # Блокируем ненужные ресурсы для ускорения
+        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
+        
+        self.bot = ThumbTackBot(self.page)
+        
+        # Сначала пытаемся открыть страницу лидов
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+        log.info("LeadProducer: opened %s (url=%s)", "/pro-leads", self.page.url)
+
+        # Если нас редиректнуло на логин — авторизуемся
+        if "login" in self.page.url.lower():
+            log.info("LeadProducer: redirected to login, authenticating...")
+            await self.bot.login_if_needed()
+            # После логина снова идем на страницу лидов
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            log.info("LeadProducer: after login, opened %s (url=%s)", "/pro-leads", self.page.url)
+
+        # Сохраняем состояние аутентификации
+        try:
+            import os
+            storage_state_path = "pw_profiles/auth_state.json"
+            os.makedirs("pw_profiles", exist_ok=True)
+            await self._ctx.storage_state(path=storage_state_path)
+            log.info(f"Authentication state saved to {storage_state_path}")
+        except Exception as e:
+            log.warning(f"Could not save auth state: {e}")
+
+        try:
+            await self._loop()
+        finally:
+            try: await self._ctx.close()
+            except: pass
+            try: await self._pw.stop()
+            except: pass
+            try: await self.redis.delete(LEASE_KEY)
+            except: pass
+            log.info("LeadProducer stopped")
+
+    async def _loop(self):
+        cycle_count = 0
+        while not self.stop_evt.is_set():
+            try:
+                cycle_count += 1
+                await self._renew()
+                await self._hb()
+
+                # Проверяем, что браузер еще открыт
+                if self.page.is_closed():
+                    log.error("LeadProducer[cycle=%d]: browser closed, stopping", cycle_count)
+                    break
+
+                await self.bot.open_leads()
+                log.info("LeadProducer[cycle=%d]: opened /leads (url=%s)", cycle_count, self.page.url)
+                
+                leads: List[Dict[str, Any]] = await self.bot.list_new_leads()
+                log.info("LeadProducer[cycle=%d]: found %d leads", cycle_count, len(leads))
+                
+                processed_count = 0
+                for lead in leads:
+                    lk = lead.get("lead_key")
+                    if not lk:
+                        log.warning("LeadProducer[cycle=%d]: skip lead without lead_key: %s", cycle_count, lead)
+                        continue
+
+                    self.flow.mark(lk, "detect")
+
+                    # Проверяем, не обработан ли уже этот лид
+                    if not await self.redis.set(f"lead:enq:{lk}", "1", ex=ENQ_TTL, nx=True):
+                        log.debug("LeadProducer[cycle=%d]: lead %s already enqueued, skip", cycle_count, lk)
+                        continue
+                    
+                    # Отправляем в очередь на обработку
+                    celery_app.send_task(
+                        "leads.tasks.process_lead_task",
+                        args=[lead],
+                        queue="lead_proc",
+                        retry=False,
+                    )
+                    processed_count += 1
+                    log.info("LeadProducer[cycle=%d]: enqueued lead %s", cycle_count, lk)
+
+                log.info("LeadProducer[cycle=%d]: processed %d/%d leads", cycle_count, processed_count, len(leads))
+                
+                # Адаптивная задержка: меньше лидов = больше задержка
+                delay = 1.0 if leads else 2.0
+                await asyncio.sleep(delay)
+                
+            except Exception as e:
+                log.error("LeadProducer[cycle=%d]: error in main loop: %s", cycle_count, e, exc_info=True)
+                await asyncio.sleep(5.0)  # Больше задержка при ошибке

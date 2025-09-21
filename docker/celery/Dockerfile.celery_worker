@@ -34,3 +34,4 @@ COPY docker/celery/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
 RUN chmod +x /usr/local/bin/worker-entrypoint.sh
 
 ENTRYPOINT ["dumb-init","--","worker-entrypoint.sh"]
+CMD ["celery","-A","leadmqr","worker","-Q","crawler","-l","INFO","-c","1","-n","crawler@%h"]

@@ -1,101 +1,103 @@
-# ========================================
-# ЗАКОММЕНТИРОВАНО: НЕ ИСПОЛЬЗУЕТСЯ В НОВОЙ АРХИТЕКТУРЕ
-# ========================================
-# Теперь используется run_continuous_loop() в playwright_bot/workflows.py
-# для обработки лидов локально с persistent context
+import asyncio
+import logging
 
-# import asyncio
-# import logging
-# import time
-# from celery import shared_task
-# from django.conf import settings
-# from django.core.cache import cache
-# from ai_calls.tasks import enqueue_ai_call
-# from leads.models import FoundPhone, ProcessedLead
-# from playwright_bot.playwright_runner import LeadRunner
-# from playwright_bot.utils import FlowTimer
+from typing import Dict, Any
+from django.core.cache import cache
 
-# logger = logging.getLogger("playwright_bot")
-# flow = FlowTimer()
+from ai_calls.tasks import enqueue_ai_call
 
-# _runner = None
-# _runner_loop_id = None
+from celery import shared_task
+from leads.models import FoundPhone, ProcessedLead
 
-# # Rate limiting для защиты от блокировки Thumbtack
-# RATE_LIMIT_KEY = "thumbtack_rate_limit"
-# RATE_LIMIT_INTERVAL = 1.0  # 1 секунда между запросами
+logger = logging.getLogger("playwright_bot")
+from playwright_bot.workflows import run_single_pass
+from playwright_bot.playwright_runner import LeadRunner
 
-# # Кэширование найденных телефонов для ускорения
-# PHONE_CACHE_KEY = "found_phone_cache"
-# PHONE_CACHE_TIMEOUT = 3600  # 1 час кэш
 
-# async def wait_for_rate_limit():
-#     """Ожидает соблюдения rate limit (1 запрос в секунду)"""
-#     while True:
-#         last_request_time = cache.get(RATE_LIMIT_KEY, 0)
-#         current_time = time.time()
+LOCK_KEY = "scan_leads_lock"
+LOCK_TTL = 60 * 2
+
+@shared_task(queue="crawler")
+def poll_leads() -> Dict[str, Any]:
+    if not cache.add(LOCK_KEY, "1", LOCK_TTL):
+        return {"ok": False, "skipped": "locked"}
+    try:
+        result: Dict[str, Any] = asyncio.run(run_single_pass())
+
+        for p in result.get("phones", []) or []:
+            lk, ph = p.get("lead_key"), p.get("phone")
+            variables = p.get("variables", {})
+            if lk and ph:
+                phone_obj, _ = FoundPhone.objects.get_or_create(
+                    lead_key=lk,
+                    phone=ph,
+                    defaults={"variables": variables}
+                )
+                enqueue_ai_call.delay(str(phone_obj.id))
+        for item in result.get("sent", []) or []:
+            lk = item.get("lead_key")
+            if lk and (item.get("status") or "").startswith("sent"):
+                ProcessedLead.objects.get_or_create(key=lk)
+
+        return result
+    finally:
+        cache.delete(LOCK_KEY)
+
+
+@shared_task(queue="lead_proc")
+def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Обработка одного лида через LeadRunner.
+    Вызывается LeadProducer'ом когда найден новый лид.
+    """
+    lk = lead.get("lead_key", "unknown")
+    logger.info("process_lead_task: starting processing for lead %s", lk)
+    
+    try:
+        # Создаем LeadRunner и обрабатываем лид
+        runner = LeadRunner()
+        result = asyncio.run(runner.process_lead(lead))
         
-#         if current_time - last_request_time >= RATE_LIMIT_INTERVAL:
-#             # Можно делать запрос
-#             cache.set(RATE_LIMIT_KEY, current_time, timeout=10)
-#             logger.debug("Rate limit: разрешен запрос (последний: %.2f сек назад)", 
-#                         current_time - last_request_time)
-#             return
+        if result.get("ok"):
+            if result.get("phone"):
+                logger.info("process_lead_task: phone found for %s, creating FoundPhone", lk)
+                
+                # Если найден телефон, создаем FoundPhone и запускаем AI call
+                phone_obj, created = FoundPhone.objects.get_or_create(
+                    lead_key=result["lead_key"],
+                    phone=result["phone"],
+                    defaults={"variables": result["variables"]}
+                )
+                
+                logger.info("process_lead_task: FoundPhone %s for lead %s (created=%s)", 
+                           phone_obj.id, lk, created)
+                
+                # Запускаем AI call
+                enqueue_ai_call.delay(str(phone_obj.id))
+                logger.info("process_lead_task: enqueued AI call for lead %s", lk)
+                
+            else:
+                logger.warning("process_lead_task: no phone found for lead %s", lk)
+            
+            # Отмечаем лид как обработанный
+            ProcessedLead.objects.get_or_create(key=result["lead_key"])
+            logger.info("process_lead_task: marked lead %s as processed", lk)
+            
+        else:
+            logger.error("process_lead_task: failed to process lead %s: %s", 
+                        lk, result.get("error", "unknown error"))
         
-#         # Нужно подождать
-#         wait_time = RATE_LIMIT_INTERVAL - (current_time - last_request_time)
-#         logger.debug("Rate limit: ожидание %.2f сек до следующего запроса", wait_time)
-#         await asyncio.sleep(wait_time)
-
-# async def _get_runner() -> LeadRunner:
-#     global _runner, _runner_loop_id
-#     loop = asyncio.get_running_loop()
-#     loop_id = id(loop)
-
-#     need_new = (_runner is None) or (_runner_loop_id != loop_id)
-#     if need_new:
-#         if _runner is not None:
-#             try:
-#                 await _runner.close()
-#             except Exception:
-#                 pass
-#         _runner = LeadRunner()
-#         await _runner.start()
-#         _runner_loop_id = loop_id
-#     return _runner
-
-# @shared_task(name="leads.tasks.process_lead_task", queue="lead_proc", bind=True)
-# def process_single_lead_task(self, lead: dict) -> dict:
-#     """
-#     Целерий-таска: обработка ОДНОГО лида.
-#     - Использует LeadRunner для отправки шаблона Thumbtack
-#     - Если phone найден → ставим звонок
-#     - Возвращаем словарь результата
-#     """
-
-#     async def _run():
-#         # Соблюдаем rate limit перед обработкой лида
-#         await wait_for_rate_limit()
+        return result
         
-#         runner = await _get_runner()
-#         result = await runner.process_lead(lead)
+    except Exception as e:
+        logger.error("process_lead_task: error processing lead %s: %s", lk, e, exc_info=True)
+        return {"ok": False, "error": str(e), "lead": lead}
+    finally:
+        # Закрываем runner
+        try:
+            asyncio.run(runner.close())
+        except Exception as cleanup_error:
+            logger.warning("process_lead_task: error closing runner for lead %s: %s", 
+                          lk, cleanup_error)
 
-#         lk = result.get("lead_key")
-#         ph = result.get("phone")
-#         vars_item = result.get("variables", {})
-#         if lk:
-#             await asyncio.to_thread(ProcessedLead.objects.get_or_create, key=lk)
 
-#         if lk and ph:
-#             phone_obj, _ = await asyncio.to_thread(
-#                 FoundPhone.objects.get_or_create,
-#                 lead_key=lk,
-#                 phone=ph,
-#                 defaults={"variables": vars_item},
-#             )
-#             enqueue_ai_call.apply_async(args=[str(phone_obj.id)], queue="ai_calls")
-#             flow.mark(lk, "call_started")
-#             logger.info("Lead %s: телефон %s — отправлен на звонок", lk, ph)
-#         return result
-
-#     return asyncio.run(_run())

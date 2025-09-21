@@ -155,16 +155,14 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 60 * 10
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 9
-# CELERY_BEAT_SCHEDULE = {
-#     # "poll-leads-every-30s": {
-#     #     "task": "leads.tasks.poll_leads",
-#     #     "schedule": 30.0,
-#     # },
-#     # "ensure-runner-alive-every-10s": {
-#     #     "task": "leads.tasks.ensure_runner_alive",
-#     #     "schedule": 10.0,
-#     # },
-# }
+CELERY_BEAT_SCHEDULE = {
+    # В продвинутой архитектуре poll_leads не нужен,
+    # так как LeadProducer работает в Docker контейнере
+    # "poll-leads-every-2min": {
+    #     "task": "leads.tasks.poll_leads",
+    #     "schedule": 120.0,  # 2 минуты
+    # },
+}
 
 CACHES = {
     "default": {
