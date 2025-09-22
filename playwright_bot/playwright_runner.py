@@ -132,7 +132,7 @@ class LeadRunner:
             logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
             
             # Шаг 3: Отправляем шаблонное сообщение
-            await self.bot.send_template_message(dry_run=True)
+            await self.bot.send_template_message(dry_run=False)
             logger.info("LeadRunner: sent template message")
             
             # Шаг 4: Извлекаем телефон
