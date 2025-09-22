@@ -20,7 +20,11 @@ if echo "$@" | grep -q "lead_proc"; then
   
   # Копируем свежий профиль
   if [ -d "/app/pw_profiles/auth_setup" ]; then
-    rsync -av /app/pw_profiles/auth_setup/ /app/pw_profiles/auth_setup_runner/ --exclude="RunningChromeVersion*" --exclude="SingletonLock*" 2>/dev/null || true
+    rsync -a /app/pw_profiles/auth_setup/ /app/pw_profiles/auth_setup_runner/ --exclude="RunningChromeVersion*" --exclude="SingletonLock*" 2>/dev/null || true
+    # Также копируем auth_state.json если он есть
+    if [ -f "/app/pw_profiles/auth_state.json" ]; then
+      cp /app/pw_profiles/auth_state.json /app/pw_profiles/auth_setup_runner/ 2>/dev/null || true
+    fi
     echo "✅ LeadRunner profile auto-synced in entrypoint!"
   else
     echo "⚠️ Warning: auth_setup profile not found, LeadRunner may need manual login"
