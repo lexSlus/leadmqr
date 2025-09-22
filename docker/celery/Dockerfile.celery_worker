@@ -9,10 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TT_LOCALE=en-US \
     TT_TIMEZONE_ID=America/New_York
 
-# Xvfb (виртуальный дисплей) + dumb-init (корректные сигналы)
+# Xvfb (виртуальный дисплей) + dumb-init (корректные сигналы) + rsync
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      xvfb dumb-init \
- && rm -rf /var/lib/apt/lists/*
+    xvfb dumb-init rsync \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ COPY . .
 
 # Рабочие каталоги + права, чтобы не ловить "profile in use"
 RUN mkdir -p /app/playwright_profile /app/.data /app/debug \
- && chown -R 1000:1000 /app
+    && chown -R 1000:1000 /app
 
 # Лёгкий entrypoint: чистит локи профиля и затем выполняет CMD
 COPY docker/celery/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
