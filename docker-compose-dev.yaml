@@ -5,7 +5,7 @@ services:
     image: postgres:16-alpine
     container_name: leadmqr_db
     restart: unless-stopped
-    env_file: [.env]
+    env_file: [ .env ]
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -14,9 +14,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    networks: [leadmqr_net]
+    networks: [ leadmqr_net ]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -25,11 +25,11 @@ services:
     image: redis:7-alpine
     container_name: leadmqr_redis
     restart: unless-stopped
-    ports: ["6379:6379"]
-    volumes: [redis_data:/data]
-    networks: [leadmqr_net]
+    ports: [ "6379:6379" ]
+    volumes: [ redis_data:/data ]
+    networks: [ leadmqr_net ]
     healthcheck:
-      test: ["CMD", "redis-cli", "PING"]
+      test: [ "CMD", "redis-cli", "PING" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -42,12 +42,12 @@ services:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
     ports:
-      - "5672:5672"     # брокер для celery
-      - "15672:15672"   # RabbitMQ UI
-    volumes: [rabbitmq_data:/var/lib/rabbitmq/]
-    networks: [leadmqr_net]
+      - "5672:5672" # брокер для celery
+      - "15672:15672" # RabbitMQ UI
+    volumes: [ rabbitmq_data:/var/lib/rabbitmq/ ]
+    networks: [ leadmqr_net ]
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -60,7 +60,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-    env_file: [.env]
+    env_file: [ .env ]
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -68,8 +68,8 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
-    ports: ["8000:8000"]
-    networks: [leadmqr_net]
+    ports: [ "8000:8000" ]
+    networks: [ leadmqr_net ]
     command: >
       python manage.py runserver 0.0.0.0:8000
 
@@ -81,36 +81,36 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-    env_file: [.env]
+    env_file: [ .env ]
     depends_on:
       rabbitmq:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks: [leadmqr_net]
+    networks: [ leadmqr_net ]
     command: >
       celery -A leadmqr beat -l info
 
   celery_lead_producer:
     build:
       context: .
-      dockerfile: docker/celery/Dockerfile.celery_worker   # тот же образ, где Playwright установлен
+      dockerfile: docker/celery/Dockerfile.celery_worker # тот же образ, где Playwright установлен
     container_name: leadmqr_lead_producer
     restart: unless-stopped
     shm_size: "1gb"
     ports:
-      - "9222:9222"  # Chrome debug port
+      - "9222:9222" # Chrome debug port
     env_file: [ .env ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       # те же переменные, что у celery_worker — чтобы профиль/локаль совпадали
-      - TT_USER_DATA_DIR=/app/pw_profiles
+      - TT_USER_DATA_DIR=/app/pw_profiles/auth_setup
       - TT_STATE_PATH=/app/.data/.tt_state.json
-      - TT_HEADLESS=false  # Используем Xvfb вместо headless
+      - TT_HEADLESS=false # Используем Xvfb вместо headless
       - TT_LOCALE=en-US
       - TT_TIMEZONE_ID=America/New_York
-      - DISPLAY=:99  # Xvfb дисплей
+      - DISPLAY=:99 # Xvfb дисплей
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -138,17 +138,17 @@ services:
       dockerfile: docker/celery/Dockerfile.celery_worker
     container_name: leadmqr_celery_worker
     restart: unless-stopped
-    env_file: [.env]
+    env_file: [ .env ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       # можно оставить, но они уже прописаны в Dockerfile как ENV
-      - TT_USER_DATA_DIR=/app/pw_profiles
+      - TT_USER_DATA_DIR=/app/pw_profiles/auth_setup
       - TT_STATE_PATH=/app/.data/.tt_state.json
       - TT_HEADLESS=false
       - TT_LOCALE=en-US
       - TT_TIMEZONE_ID=America/New_York
-      - DISPLAY=:99  # Xvfb дисплей
+      - DISPLAY=:99 # Xvfb дисплей
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -156,13 +156,13 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
-    networks: [leadmqr_net]
+    networks: [ leadmqr_net ]
     volumes:
       - .:/app
       - state_data:/app/.data
       - ./pw_profiles:/app/pw_profiles:rw
       - ./debug:/app/debug
-    command: xvfb-run -a celery -A leadmqr worker -Q lead_proc -l INFO -c 2 -n lead_proc@%h
+    command: xvfb-run -a celery -A leadmqr worker -Q lead_proc -l INFO --pool=solo -n lead_proc@%h
 
   celery_worker_ai:
     build:
@@ -170,7 +170,7 @@ services:
       dockerfile: docker/celery/Dockerfile.celery_worker
     container_name: leadmqr_ai_worker
     restart: unless-stopped
-    env_file: [.env]
+    env_file: [ .env ]
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -178,13 +178,13 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
-    networks: [leadmqr_net]
+    networks: [ leadmqr_net ]
     volumes:
       - .:/app
       - state_data:/app/.data
       - ./debug:/app/debug
     entrypoint: []
-    command: ["celery","-A","leadmqr","worker","-Q","ai_calls","-l","INFO","-c","4","-n","ai_calls@%h"]
+    command: [ "celery", "-A", "leadmqr", "worker", "-Q", "ai_calls", "-l", "INFO", "-c", "4", "-n", "ai_calls@%h" ]
 
 networks:
   leadmqr_net:

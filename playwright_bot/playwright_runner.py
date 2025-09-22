@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+import threading
+import uuid
 from typing import Any, Dict, Optional
 from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
@@ -11,7 +13,7 @@ from playwright_bot.utils import unique_user_data_dir, FlowTimer
 
 logger = logging.getLogger("playwright_bot")
 
-BROWSER_WS_ENDPOINT = "ws://celery_lead_producer:9222"
+BROWSER_WS_ENDPOINT = os.getenv("BROWSER_WS_ENDPOINT", "ws://celery_lead_producer:9222")
 
 class LeadRunner:
     """
@@ -24,7 +26,8 @@ class LeadRunner:
         self._ctx = None
         self.page = None
         self.bot: Optional[ThumbTackBot] = None
-        self.user_dir = unique_user_data_dir("worker")
+        # Используем отдельный профиль для LeadRunner, но синхронизированный с LeadProducer
+        self.user_dir = SETTINGS.user_data_dir + "_runner"
         self.flow = FlowTimer()
 
     async def start(self):
@@ -34,22 +37,24 @@ class LeadRunner:
         try:
             self._pw = await async_playwright().start()
 
-            logger.info(f"Connecting to browser at {BROWSER_WS_ENDPOINT}...")
-            self._browser = await self._pw.chromium.connect(BROWSER_WS_ENDPOINT, timeout=60000)
-            logger.info("Successfully connected to the browser.")
-            
-            storage_state_path = "/app/pw_profiles/auth_state.json"
-            if os.path.exists(storage_state_path):
-                logger.info(f"Using storage state from: {storage_state_path}")
-            else:
-                logger.warning(f"Storage state file not found at {storage_state_path}. Will attempt to log in manually if needed.")
-                storage_state_path = None
-
-            self._ctx = await self._browser.new_context(
-                storage_state=storage_state_path,
+            # Запускаем локальный браузер (как в run_single_pass)
+            logger.info("Starting local browser...")
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                user_data_dir=self.user_dir,
+                headless=False,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-features=VizDisplayCompositor",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-extensions",
+                    "--disable-plugins",
+                ],
                 viewport={"width": 1920, "height": 1080},
                 locale=getattr(SETTINGS, "locale", "en-US"),
             )
+            
             self.page = await self._ctx.new_page()
             
             await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
@@ -122,6 +127,7 @@ class LeadRunner:
             logger.info("LeadRunner: opened /leads, URL: %s", self.page.url)
             
             # Шаг 2: Открываем детали лида
+            logger.info("LeadRunner: lead data: %s", lead)
             await self.bot.open_lead_details(lead)
             logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
             

@@ -52,12 +52,23 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
     """
     lk = lead.get("lead_key", "unknown")
     logger.info("process_lead_task: starting processing for lead %s", lk)
-    
-    try:
-        # Создаем LeadRunner и обрабатываем лид
+
+    # Создаем вложенную async функцию, чтобы управлять всем в одном цикле
+    async def main():
         runner = LeadRunner()
-        result = asyncio.run(runner.process_lead(lead))
-        
+        try:
+            # Выполняем основную работу
+            return await runner.process_lead(lead)
+        finally:
+            # Гарантированно закрываем runner в том же цикле, где он работал
+            logger.info("process_lead_task: closing runner for lead %s", lk)
+            await runner.close()
+
+    try:
+        # Запускаем всю async логику ОДНИМ вызовом asyncio.run()
+        result = asyncio.run(main())
+
+        # --- Дальнейшая обработка результата (уже в синхронном коде) ---
         if result.get("ok"):
             if result.get("phone"):
                 logger.info("process_lead_task: phone found for %s, creating FoundPhone", lk)
@@ -90,14 +101,7 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
         return result
         
     except Exception as e:
-        logger.error("process_lead_task: error processing lead %s: %s", lk, e, exc_info=True)
+        logger.error("process_lead_task: critical error processing lead %s: %s", lk, e, exc_info=True)
         return {"ok": False, "error": str(e), "lead": lead}
-    finally:
-        # Закрываем runner
-        try:
-            asyncio.run(runner.close())
-        except Exception as cleanup_error:
-            logger.warning("process_lead_task: error closing runner for lead %s: %s", 
-                          lk, cleanup_error)
 
 

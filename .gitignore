@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 .env
 
+pw_profiles/Default/Code Cache/
+pw_profiles/*/Code Cache/
+pw_profiles/*/Cache/

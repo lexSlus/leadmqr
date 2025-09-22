@@ -134,41 +134,30 @@ class ThumbTackBot:
 
 
     async def open_leads(self):
-        # Открываем страницу лидов напрямую
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-        logger.info("[open_leads] Page downloaded, URL сейчас: %s", self.page.url)
+        logger.info("[open_leads] Attempting to access pro-leads...")
         
-        # Если нас редиректнуло на логин — авторизуемся и повторяем попытку
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=10000)
+        logger.info("[open_leads] Direct access, URL: %s", self.page.url)
+        
+        # Если все еще на login - пробуем авторизацию
         if "login" in self.page.url.lower():
-            logger.info("[open_leads] Redirected to login, authenticating...")
+            logger.info("[open_leads] Still on login, attempting authentication...")
             await self.login_if_needed()
-            # После логина снова идем на страницу лидов
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
-            logger.info("[open_leads] After login, URL сейчас: %s", self.page.url)
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=10000)
+            logger.info("[open_leads] After auth, URL: %s", self.page.url)
 
-        # На всякий случай ждём загрузку DOM
+        # Ждём загрузку DOM
         try:
-            await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+            await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
         except PWTimeoutError:
             pass
-
-        if not self.page.url.rstrip("/").endswith("pro-leads"):
-            leads_link = self.page.get_by_role("link", name=re.compile(r"^Leads$", re.I))
-            if await leads_link.count():
-                await leads_link.first.click()
-                try:
-                    await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
-                except PWTimeoutError:
-                    pass
-        else:
-            logger.info("[open_leads] Уже на странице /pro-leads, URL: %s", self.page.url)
 
 
     async def list_new_leads(self) -> List[Dict]:
         results: List[Dict] = []
         try:
             logger.info("[list_new_leads] URL before wait: %s", self.page.url)
-            await self.page.wait_for_load_state("networkidle", timeout=15000)
+            await self.page.wait_for_load_state("networkidle", timeout=5000)
         except Exception as e:
             logger.warning("[list_new_leads] wait_for_load_state failed: %s", e)
         ctx = self.page
@@ -224,14 +213,14 @@ class ThumbTackBot:
         href = (lead or {}).get("href")
         if href:
             url = href if href.startswith("http") else f"{SETTINGS.base_url}{href}"
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=15000)
         else:
             btn = self.page.get_by_role("button", name=re.compile(r"view\s*details", re.I)).nth(lead["index"])
             await btn.scroll_into_view_if_needed()
             await btn.wait_for(state="visible", timeout=5000)
             await btn.click()
 
-        await self.page.wait_for_load_state("networkidle", timeout=15000)
+        await self.page.wait_for_load_state("domcontentloaded", timeout=5000)
 
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
@@ -268,10 +257,10 @@ class ThumbTackBot:
                         continue
                     btn = loc.first
                     # Сначала дождёмся, что элемент прикреплён
-                    await btn.wait_for(state="attached", timeout=6_000)
+                    await btn.wait_for(state="attached", timeout=3_000)
                     # затем сделаем его видимым/прокрутим
                     try:
-                        await btn.wait_for(state="visible", timeout=6_000)
+                        await btn.wait_for(state="visible", timeout=3_000)
                     except Exception:
                         pass
                     await btn.scroll_into_view_if_needed()
@@ -282,10 +271,10 @@ class ThumbTackBot:
 
             if reply_btn:
                 try:
-                    await reply_btn.click(timeout=6_000)
+                    await reply_btn.click(timeout=3_000)
                 except Exception:
                     try:
-                        await reply_btn.click(timeout=4_000, force=True)
+                        await reply_btn.click(timeout=2_000, force=True)
                     except Exception:
                         # не получилось кликнуть — дальше попробуем textarea
                         pass
@@ -297,7 +286,7 @@ class ThumbTackBot:
 
         # теперь работаем с textarea, если она есть
         try:
-            await box.first.wait_for(state="visible", timeout=10_000)
+            await box.first.wait_for(state="visible", timeout=5_000)
         except Exception:
             # форма так и не появилась — выходим без падения
             return
@@ -310,11 +299,11 @@ class ThumbTackBot:
         if await send_btn.count() == 0:
             send_btn = ctx.locator("button:has-text(/^\\s*Send\\s*$/i)")
         try:
-            await send_btn.first.wait_for(state="visible", timeout=10_000)
+            await send_btn.first.wait_for(state="visible", timeout=5_000)
             await send_btn.first.scroll_into_view_if_needed()
             await send_btn.first.click()
             try:
-                await self.page.wait_for_load_state("networkidle", timeout=6_000)
+                await self.page.wait_for_load_state("networkidle", timeout=3_000)
             except Exception:
                 pass
         except Exception:
@@ -421,7 +410,7 @@ class ThumbTackBot:
                 logger.info("✅ URL изменился, ждем загрузки контента...")
                 # Ждем загрузки контента страницы
                 await self.page.wait_for_load_state("domcontentloaded")
-                await self.page.wait_for_timeout(2000)  # Дополнительная пауза для загрузки
+                await self.page.wait_for_timeout(1000)  # Дополнительная пауза для загрузки
                 logger.info("✅ Контент загружен, извлекаем телефон...")
             except Exception as e:
                 logger.warning("⚠️ Не удалось дождаться загрузки: %s", e)

@@ -27,7 +27,7 @@ class LeadProducer:
         self.bot: Optional[ThumbTackBot] = None
         self.stop_evt = asyncio.Event()
         self.redis: Optional[aioredis.Redis] = None
-        self.user_dir = unique_user_data_dir("producer")
+        self.user_dir = SETTINGS.user_data_dir  # Используем фиксированную директорию как в run_single_pass
         self.flow = FlowTimer(redis_url=dj_settings.REDIS_URL)
 
     async def _acquire(self) -> bool:
@@ -126,10 +126,7 @@ class LeadProducer:
 
                     self.flow.mark(lk, "detect")
 
-                    # Проверяем, не обработан ли уже этот лид
-                    if not await self.redis.set(f"lead:enq:{lk}", "1", ex=ENQ_TTL, nx=True):
-                        log.debug("LeadProducer[cycle=%d]: lead %s already enqueued, skip", cycle_count, lk)
-                        continue
+                    # Убираем проверку - всегда ставим лиды в очередь для тестирования
                     
                     # Отправляем в очередь на обработку
                     celery_app.send_task(
