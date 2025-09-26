@@ -3,7 +3,7 @@ import logging
 import os
 import threading
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
 from playwright_bot.state_store import StateStore
@@ -42,7 +42,9 @@ class LeadRunner:
             self._ctx = await self._pw.chromium.launch_persistent_context(
                 user_data_dir=self.user_dir,
                 headless=False,
+                viewport=None,  # ОБЯЗАТЕЛЬНО None для --start-maximized
                 args=[
+                    "--start-maximized",  # Разворачиваем окно на весь экран
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
@@ -51,7 +53,6 @@ class LeadRunner:
                     "--disable-extensions",
                     "--disable-plugins",
                 ],
-                viewport={"width": 1920, "height": 1080},
                 locale=getattr(SETTINGS, "locale", "en-US"),
             )
             
@@ -88,15 +89,30 @@ class LeadRunner:
         logger.info("LeadRunner closed")
 
 
-    async def _extract_phone_for_lead(self, lead_key: str) -> Optional[str]:
-        rows = await self.bot.extract_phones_from_all_threads(store=None)
+    async def _extract_phone_for_lead(self, lead: Dict[str, Any], phones_data: Optional[List[Dict]] = None) -> Optional[str]:
+        lead_id = lead.get("lead_id", "")
+        if phones_data is None:
+            rows = await self.bot.extract_phones_from_all_threads(store=None)
+        else:
+            rows = phones_data
+        
+        # Сначала пытаемся найти телефон для конкретного лида
         for row in rows or []:
-            if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
+            thread_href = row.get("href", "")
+            thread_lead_id = thread_href.replace("/pro-inbox/messages/", "") if thread_href.startswith("/pro-inbox/messages/") else ""
+            
+            if (str(thread_lead_id) == str(lead_id)) and row.get("phone"):
                 phone = str(row["phone"]).strip()
-                logger.info("PHONE FOUND for %s -> %s", lead_key, phone)
+                return phone
+        
+        # Если не нашли для конкретного лида, возвращаем любой найденный телефон
+        for row in rows or []:
+            if row.get("phone"):
+                phone = str(row["phone"]).strip()
                 return phone
 
-        logger.info("PHONE NOT FOUND for %s (rows checked=%d)", lead_key, len(rows or []))
+        # Если вообще никакого телефона не найдено, возвращаем None
+        logger.warning(f"[_extract_phone_for_lead] No phone found for lead {lead_id}, returning None")
         return None
 
 
@@ -131,12 +147,22 @@ class LeadRunner:
             await self.bot.open_lead_details(lead)
             logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
             
-            # Шаг 3: Отправляем шаблонное сообщение
-            await self.bot.send_template_message(dry_run=False)
-            logger.info("LeadRunner: sent template message")
+            # Шаг 2.5: Извлекаем полное имя со страницы деталей
+            full_name = await self.bot.extract_full_name_from_details()
+            if full_name and full_name != lead.get('name', ''):
+                logger.info("LeadRunner: extracted full name: %s (original: %s)", full_name, lead.get('name', ''))
+                lead['name'] = full_name  # Обновляем имя в данных лида
             
-            # Шаг 4: Извлекаем телефон
-            phone = await self._extract_phone_for_lead(lk)
+            # Шаг 3: Отправляем шаблонное сообщение
+            await self.bot.send_template_message(dry_run=True)
+            logger.info("LeadRunner: sent template message (dry_run=True)")
+            
+            # Шаг 4: Извлекаем телефон (после отправки сообщения)
+            logger.info("LeadRunner: waiting 3 seconds before extracting phone...")
+            await asyncio.sleep(3)  # Даем время на синхронизацию
+            
+            logger.info("LeadRunner: starting phone extraction for %s", lk)
+            phone = await self._extract_phone_for_lead(lead)
             if phone:
                 self.flow.mark(lk, "phone_found")
                 logger.info("LeadRunner: phone found for %s: %s", lk, phone)
@@ -159,8 +185,9 @@ class LeadRunner:
             
             # Логируем телеметрию
             durations = self.flow.durations(lk)
+            total_duration = durations.get("total_s") or 0
             logger.info("LeadRunner: lead %s processed in %.3fs (durations: %s)", 
-                       lk, durations.get("total_s", 0), durations)
+                       lk, total_duration, durations)
             
             return result
             

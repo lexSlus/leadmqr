@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'leads',
     'django_celery_beat',
     'ai_calls',
+    'telegram_app',
     'rest_framework',
 
 ]
@@ -155,6 +156,14 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 60 * 10
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 9
+
+# Маршрутизация задач по очередям
+CELERY_TASK_ROUTES = {
+    'leads.tasks.poll_leads': {'queue': 'crawler'},
+    'leads.tasks.process_lead_task': {'queue': 'lead_proc'},
+    'ai_calls.tasks.*': {'queue': 'ai_calls'},
+    'telegram_app.tasks.*': {'queue': 'telegram'},
+}
 CELERY_BEAT_SCHEDULE = {
     # В продвинутой архитектуре poll_leads не нужен,
     # так как LeadProducer работает в Docker контейнере
@@ -197,3 +206,10 @@ LOGGING = {
 
 # Чтобы Celery не перехватывал root-логгер (Celery 5+)
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
+# Telegram Bot Settings
+
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+TELEGRAM_ENABLED = True
+

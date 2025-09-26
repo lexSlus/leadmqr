@@ -49,14 +49,16 @@ class LeadProducer:
             user_data_dir=self.user_dir,
             headless=False,  # Используем Xvfb для Docker
             args=[
-                "--remote-debugging-port=9222",  # Debug port
-                "--remote-debugging-address=0.0.0.0",
-                "--no-sandbox", 
-                "--disable-setuid-sandbox", 
-                "--disable-dev-shm-usage", 
+                "--start-maximized",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
                 "--disable-gpu",
+                "--disable-features=VizDisplayCompositor",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-extensions",
+                "--disable-plugins",
             ],
-            viewport={"width": 1920, "height": 1080},
+            viewport=None,
         )
         self.page = await self._ctx.new_page()
         
@@ -66,7 +68,7 @@ class LeadProducer:
         self.bot = ThumbTackBot(self.page)
         
         # Сначала пытаемся открыть страницу лидов
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=10000)
         log.info("LeadProducer: opened %s (url=%s)", "/pro-leads", self.page.url)
 
         # Если нас редиректнуло на логин — авторизуемся
@@ -74,7 +76,7 @@ class LeadProducer:
             log.info("LeadProducer: redirected to login, authenticating...")
             await self.bot.login_if_needed()
             # После логина снова идем на страницу лидов
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=25000)
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=10000)
             log.info("LeadProducer: after login, opened %s (url=%s)", "/pro-leads", self.page.url)
 
         # Сохраняем состояние аутентификации
@@ -118,7 +120,7 @@ class LeadProducer:
                 log.info("LeadProducer[cycle=%d]: found %d leads", cycle_count, len(leads))
                 
                 processed_count = 0
-                for lead in leads:
+                for lead in leads[:1]:
                     lk = lead.get("lead_key")
                     if not lk:
                         log.warning("LeadProducer[cycle=%d]: skip lead without lead_key: %s", cycle_count, lead)
@@ -141,7 +143,7 @@ class LeadProducer:
                 log.info("LeadProducer[cycle=%d]: processed %d/%d leads", cycle_count, processed_count, len(leads))
                 
                 # Адаптивная задержка: меньше лидов = больше задержка
-                delay = 1.0 if leads else 2.0
+                delay = 0.5 if leads else 1.0
                 await asyncio.sleep(delay)
                 
             except Exception as e:

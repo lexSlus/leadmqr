@@ -3,8 +3,8 @@ import logging
 
 from typing import Dict, Any
 from django.core.cache import cache
-
 from ai_calls.tasks import enqueue_ai_call
+from telegram_app.tasks import send_telegram_notification_task
 
 from celery import shared_task
 from leads.models import FoundPhone, ProcessedLead
@@ -33,7 +33,8 @@ def poll_leads() -> Dict[str, Any]:
                     phone=ph,
                     defaults={"variables": variables}
                 )
-                enqueue_ai_call.delay(str(phone_obj.id))
+                
+                # enqueue_ai_call.delay(str(phone_obj.id))
         for item in result.get("sent", []) or []:
             lk = item.get("lead_key")
             if lk and (item.get("status") or "").startswith("sent"):
@@ -84,8 +85,12 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
                            phone_obj.id, lk, created)
                 
                 # Запускаем AI call
-                enqueue_ai_call.delay(str(phone_obj.id))
-                logger.info("process_lead_task: enqueued AI call for lead %s", lk)
+                # enqueue_ai_call.delay(str(phone_obj.id))
+                # logger.info("process_lead_task: enqueued AI call for lead %s", lk)
+                
+                # Отправляем уведомление в Telegram ПАРАЛЛЕЛЬНО с AI звонком
+                send_telegram_notification_task.delay(result)
+                logger.info("process_lead_task: enqueued Telegram notification for lead %s", lk)
                 
             else:
                 logger.warning("process_lead_task: no phone found for lead %s", lk)

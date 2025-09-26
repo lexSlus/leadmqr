@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import pathlib
+import time
 from typing import Dict, Any
 from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
@@ -18,7 +19,7 @@ async def run_single_pass() -> Dict[str, Any]:
 
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=SETTINGS.user_data_dir,
-            headless=False,  # GUI режим для прохождения капчи
+            headless=True,  # Headless режим для Docker
             slow_mo=0,  # Без задержек
             args=[
                 "--no-sandbox",
@@ -29,6 +30,10 @@ async def run_single_pass() -> Dict[str, Any]:
                 "--disable-extensions",
                 "--disable-plugins",
                 "--remote-debugging-port=9222",
+                "--lang=en-US",
+                "--accept-lang=en-US,en;q=0.9",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor,TranslateUI",
             ],
             viewport=None,
         )
@@ -36,7 +41,9 @@ async def run_single_pass() -> Dict[str, Any]:
         page = await context.new_page()
 
         cycle_count = 0
-        while True:
+        start_time = time.time()
+        max_runtime = 300  # 5 минут максимум
+        while time.time() - start_time < max_runtime:
             try:
                 cycle_count += 1
 
@@ -49,10 +56,11 @@ async def run_single_pass() -> Dict[str, Any]:
                 print("AFTER GOTO:", page.url)
                 leads = await bot.list_new_leads()
                 print(f"[DEBUG] found leads: {len(leads)}")
+                print(f"[DEBUG] cycle #{cycle_count}, runtime: {time.time() - start_time:.1f}s")
 
                 if not leads:
                     print("Лидов не найдено, мгновенная проверка...")
-                    await asyncio.sleep(0.1)  # Минимальная пауза 0.1 секунды
+                    await asyncio.sleep(SETTINGS.poll_interval_sec)  # Используем настройку из конфига
                     continue
 
                 # Обрабатываем лиды
@@ -70,7 +78,7 @@ async def run_single_pass() -> Dict[str, Any]:
                             "source": "thumbtack",
                         }
                         
-                        await bot.send_template_message(dry_run=True)
+                        await bot.send_template_message(dry_run=True)  # Тестовый режим
                         sent.append({
                             "index": lead["index"],
                             "status": "sent",
@@ -86,17 +94,17 @@ async def run_single_pass() -> Dict[str, Any]:
                 phones = await bot.extract_phones_from_all_threads()
                 print(f"📞 Результат извлечения телефонов: {phones}")
                 
-                # Если есть телефоны - возвращаем их
+                # Если есть телефоны - возвращаем их вместе с sent данными
                 if phones:
                     return {
                         "ok": True,
                         "phones": phones,
-                        "sent": []
+                        "sent": sent  # Не теряем информацию об отправленных сообщениях
                     }
                 
                 # Если телефонов нет - продолжаем цикл
                 print("Телефонов не найдено, продолжаем...")
-                await asyncio.sleep(0.1)  # Минимальная пауза
+                await asyncio.sleep(SETTINGS.poll_interval_sec)  # Используем настройку из конфига
             except KeyboardInterrupt:
                 print("Получен сигнал остановки...")
                 break
@@ -104,10 +112,10 @@ async def run_single_pass() -> Dict[str, Any]:
                 print(f"Ошибка в цикле #{cycle_count}: {e}")
                 await asyncio.sleep(10)  # Пауза при ошибке
         
-        # Браузер закроется только при KeyboardInterrupt
+        # Браузер закроется при таймауте или KeyboardInterrupt
         return {
             "ok": True,
-            "message": "Persistent browser stopped",
+            "message": f"Session completed after {time.time() - start_time:.1f}s, {cycle_count} cycles",
             "phones": [],  # Добавляем пустые списки для совместимости с таской
             "sent": []
         }

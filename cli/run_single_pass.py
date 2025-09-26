@@ -9,7 +9,7 @@ import asyncio
 import logging
 
 # Добавляем путь к проекту
-sys.path.insert(0, '/Users/lex/Documents/leadmqr')
+sys.path.insert(0, '/app')
 
 # Настройка переменных окружения
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'leadmqr.settings')

@@ -13,11 +13,8 @@ class BrowserManager:
 
     def __enter__(self):
         self._p = sync_playwright().start()
-        # Старий код запуску закоментовано
-        # self.browser = self._p.chromium.launch(headless=self.headless, slow_mo=SETTINGS.slow_mo)
-        
-        # Новий код підключення
-        self.browser = self._p.chromium.connect("http://host.docker.internal:9222")
+        # Запускаем собственный браузер
+        self.browser = self._p.chromium.launch(headless=self.headless, slow_mo=SETTINGS.slow_mo)
         
         storage = SETTINGS.storage_state if Path(SETTINGS.storage_state).exists() else None
         self.ctx = self.browser.new_context(storage_state=storage)
@@ -33,10 +30,14 @@ class BrowserManager:
         try:
             self.save_state()
         finally:
-            # Закриваємо контекст і сторінку, але не сам браузер
+            # Закриваємо контекст і сторінку
             if self.page:
                 self.page.close()
-            # self.browser.close() <-- ВАЖЛИВО: цього рядка тут бути не повинно!
+            if self.ctx:
+                self.ctx.close()
+            # Закриваємо браузер
+            if self.browser:
+                self.browser.close()
             # Зупиняємо клієнт Playwright
             if self._p:
                 self._p.stop()

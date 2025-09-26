@@ -1,11 +1,25 @@
 #!/usr/bin/env sh
 set -e
 
+echo "🚀 Entrypoint script started!"
+echo "📁 Current directory: $(pwd)"
+echo "👤 Current user: $(whoami)"
+echo "🔍 TT_USER_DATA_DIR: $TT_USER_DATA_DIR"
+
 # На всякий: чистим зависшие лок-файлы профиля, чтобы не словить SingletonLock
 if [ -n "$TT_USER_DATA_DIR" ] && [ -d "$TT_USER_DATA_DIR" ]; then
   rm -f "$TT_USER_DATA_DIR/Singleton"* 2>/dev/null || true
   chown -R 1000:1000 "$TT_USER_DATA_DIR" 2>/dev/null || true
   chmod 700 "$TT_USER_DATA_DIR" 2>/dev/null || true
+fi
+
+# Дополнительно очищаем auth_setup профиль
+if [ -d "/app/pw_profiles/auth_setup" ]; then
+  echo "🧹 Cleaning auth_setup profile lock files..."
+  rm -f "/app/pw_profiles/auth_setup/Singleton"* 2>/dev/null || true
+  chown -R root:root "/app/pw_profiles/auth_setup" 2>/dev/null || true
+  chmod 700 "/app/pw_profiles/auth_setup" 2>/dev/null || true
+  echo "✅ auth_setup profile cleaned!"
 fi
 
 # Автоматически синхронизируем профиль LeadRunner с LeadProducer

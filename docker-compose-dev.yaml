@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   db:
     image: postgres:16-alpine
@@ -56,6 +54,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.base
+      args:
+        BUILD_DATE: ${BUILD_DATE:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}
     container_name: leadmqr_web
     restart: unless-stopped
     volumes:
@@ -77,6 +77,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.base
+      args:
+        BUILD_DATE: ${BUILD_DATE:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}
     container_name: leadmqr_celery_beat
     restart: unless-stopped
     volumes:
@@ -124,7 +126,7 @@ services:
       - state_data:/app/.data
       - ./pw_profiles:/app/pw_profiles:rw
       - ./debug:/app/debug
-    command: xvfb-run -a python manage.py start_lead_runner
+    command: [ "xvfb-run", "-a", "python", "manage.py", "start_lead_runner" ]
     healthcheck:
       # healthcheck на Python: проверяем heartbeat-ключ в Redis
       test: [ "CMD", "python", "-c", "import os,sys,redis; r=redis.Redis(host=os.getenv('REDIS_HOST','redis'), port=int(os.getenv('REDIS_PORT','6379')), decode_responses=True); sys.exit(0 if r.get('tt:runner:hb') else 1)" ]
@@ -184,7 +186,26 @@ services:
       - state_data:/app/.data
       - ./debug:/app/debug
     entrypoint: []
-    command: [ "celery", "-A", "leadmqr", "worker", "-Q", "ai_calls", "-l", "INFO", "-c", "4", "-n", "ai_calls@%h" ]
+    command: [ "celery", "-A", "leadmqr", "worker", "-Q", "ai_calls,telegram", "-l", "INFO", "-c", "4", "-n", "ai_calls@%h" ]
+
+  telegram_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+      args:
+        BUILD_DATE: ${BUILD_DATE:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}
+    container_name: leadmqr_telegram_bot
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file: [ .env ]
+    environment:
+      - DJANGO_SETTINGS_MODULE=leadmqr.settings
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [ leadmqr_net ]
+    command: python get_chat_id.py
 
 networks:
   leadmqr_net:

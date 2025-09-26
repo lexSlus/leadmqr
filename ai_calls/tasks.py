@@ -14,10 +14,8 @@ def enqueue_ai_call(found_phone_id: str):
         lead_key=phone_obj.lead_key,
         phone=phone_obj.phone,
     )
-    # Убрали проверку call для тестирования - всегда делаем звонок
-    # if not call:
-    #     logger.error("AI call skipped")
-    #     return {"skipped": True}
+    
+    # call всегда создается (enqueue_if_needed всегда возвращает объект)
     resp = ai_service.start_call(call, variables=phone_obj.variables)
     logger.info("AI call started %s", resp)
     return resp
