@@ -120,7 +120,7 @@ class LeadProducer:
                 log.info("LeadProducer[cycle=%d]: found %d leads", cycle_count, len(leads))
                 
                 processed_count = 0
-                for lead in leads[:1]:
+                for lead in leads:
                     lk = lead.get("lead_key")
                     if not lk:
                         log.warning("LeadProducer[cycle=%d]: skip lead without lead_key: %s", cycle_count, lead)
