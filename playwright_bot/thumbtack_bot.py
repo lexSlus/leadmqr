@@ -166,7 +166,7 @@ class ThumbTackBot:
         try:
             await cards.first.wait_for(state="visible", timeout=2000)
         except Exception:
-            logger.debug("[list_new_leads] no visible cards within timeout")
+            pass
 
         count = await cards.count()
 
@@ -225,7 +225,9 @@ class ThumbTackBot:
             await btn.click()
 
         await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
-    
+        
+
+
     async def extract_full_name_from_details(self) -> Optional[str]:
         """
         Извлекает полное имя клиента со страницы деталей лида.
@@ -260,18 +262,65 @@ class ThumbTackBot:
         except Exception as e:
             logger.error(f"Error extracting full name from details: {e}")
             return None
-        
-
 
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
+        logger.info(f"ThumbTackBot: send_template_message started, dry_run={dry_run}")
+        logger.info(f"ThumbTackBot: current URL: {self.page.url}")
+        
         try:
             await self.page.wait_for_url(re.compile(r"/pro-leads/\d+"), timeout=8_000)
-        except Exception:
-            pass
+            logger.info("ThumbTackBot: successfully waited for pro-leads URL")
+        except Exception as e:
+            logger.warning(f"ThumbTackBot: failed to wait for pro-leads URL: {e}")
+        
         
         # Ждем загрузки страницы
         await self.page.wait_for_load_state("domcontentloaded", timeout=5000)
+        logger.info("ThumbTackBot: page loaded, starting message sending process")
+        
+        # Ожидание загрузки React с retry логикой (как в open_messages)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Ждем, пока корневой div (#app-page-root) наполнится контентом
+                await self.page.wait_for_function(
+                    "document.querySelector('#app-page-root')?.childElementCount > 0",
+                    timeout=30000
+                )
+                logger.info(f"ThumbTackBot: React loaded successfully (attempt {attempt + 1})")
+                break  # Успешно загрузилось, выходим из цикла
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"ThumbTackBot: React load attempt {attempt + 1} failed: {e}, retrying...")
+                    # Делаем refresh и ждем
+                    await self.page.reload(wait_until="domcontentloaded", timeout=30000)
+                    await self.page.wait_for_timeout(2000)
+                else:
+                    logger.error(f"ThumbTackBot: React failed to load after {max_retries} attempts: {e}")
+                    # Сохраняем диагностику
+                    await self._run_diagnostics("react_load_failure_lead_page")
+        
+        # Дополнительное ожидание для стабильности
+        await self.page.wait_for_timeout(2000)
+        logger.info("ThumbTackBot: additional 2s wait completed")
+        
+        # Проверяем и закрываем модальные окна
+        try:
+            modal_close_buttons = await self.page.locator("[data-test*='modal'], [role='dialog'] button, .modal button").count()
+            if modal_close_buttons > 0:
+                # Пытаемся закрыть модальные окна
+                for i in range(modal_close_buttons):
+                    try:
+                        close_btn = self.page.locator("[data-test*='modal'], [role='dialog'] button, .modal button").nth(i)
+                        if await close_btn.is_visible():
+                            await close_btn.click()
+                            await self.page.wait_for_timeout(500)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         
         # Ищем стрелочку для закрытия правой колонки и показа кнопки Reply
         # Проверяем, есть ли стрелочка, и кликаем только если она найдена
@@ -310,10 +359,26 @@ class ThumbTackBot:
             pass
 
         # Если textarea уже есть — обойдёмся без Reply
+        logger.info(f"ThumbTackBot: looking for textarea with placeholder: '{MSG_PLACEHOLDER}'")
         box = ctx.get_by_placeholder(MSG_PLACEHOLDER)
-        if await box.count() == 0:
+        box_count = await box.count()
+        logger.info(f"ThumbTackBot: found {box_count} textareas with specific placeholder")
+        
+        if box_count == 0:
             box = ctx.locator("textarea[placeholder]")
-        if await box.count() == 0:
+            box_count = await box.count()
+            logger.info(f"ThumbTackBot: found {box_count} textareas with any placeholder")
+        
+        if box_count == 0:
+            logger.info("ThumbTackBot: no textarea found, looking for Reply button")
+            
+            # Дополнительное ожидание для появления кнопок (как в open_messages)
+            try:
+                # Ждем появления хотя бы одной кнопки на странице
+                await ctx.locator("button").first.wait_for(timeout=10000)
+            except Exception:
+                pass
+            
             # Ищем кнопку Reply разными способами
             candidates = [
                 ctx.get_by_role("button", name=RE_REPLY),
@@ -324,9 +389,10 @@ class ThumbTackBot:
                 ctx.locator("button:has(span._2CV_W3BKnouk-HUw1DACuL:has-text('Reply'))"),
             ]
             reply_btn = None
-            for loc in candidates:
+            for i, loc in enumerate(candidates):
                 try:
-                    if await loc.count() == 0:
+                    count = await loc.count()
+                    if count == 0:
                         continue
                     btn = loc.first
                     # Сначала дождёмся, что элемент прикреплён
@@ -349,33 +415,48 @@ class ThumbTackBot:
                     try:
                         await reply_btn.click(timeout=2_000, force=True)
                     except Exception:
-                        # не получилось кликнуть — дальше попробуем textarea
                         pass
 
             # после клика попробуем снова найти textarea
             box = ctx.get_by_placeholder(MSG_PLACEHOLDER)
-            if await box.count() == 0:
+            box_count = await box.count()
+            
+            if box_count == 0:
                 box = ctx.locator("textarea[placeholder]")
+                box_count = await box.count()
 
         # теперь работаем с textarea, если она есть
         try:
             await box.first.wait_for(state="visible", timeout=5_000)
         except Exception:
-            # форма так и не появилась — выходим без падения
             return
 
         await box.first.fill(text)
 
-        if dry_run:
-            return
+        # Ищем кнопку Send
         send_btn = ctx.get_by_role("button", name=RE_SEND)
-        if await send_btn.count() == 0:
+        send_count = await send_btn.count()
+        
+        if send_count == 0:
             send_btn = ctx.locator("button:has-text(/^\\s*Send\\s*$/i)")
-        if await send_btn.count() == 0:
+            send_count = await send_btn.count()
+            
+        if send_count == 0:
             # Новые селекторы по CSS классам для Send
             send_btn = ctx.locator("button._1iRY-9hq7N_ErfzJ6CdfXn:has(span:has-text('Send'))")
-        if await send_btn.count() == 0:
+            send_count = await send_btn.count()
+            
+        if send_count == 0:
             send_btn = ctx.locator("button:has(span._2CV_W3BKnouk-HUw1DACuL:has-text('Send'))")
+            send_count = await send_btn.count()
+            
+        if send_count == 0:
+            return
+        
+        # Проверяем dry_run режим
+        if dry_run:
+            return
+            
         try:
             await send_btn.first.wait_for(state="visible", timeout=5_000)
             await send_btn.first.scroll_into_view_if_needed()
@@ -385,6 +466,7 @@ class ThumbTackBot:
             except Exception:
                 pass
         except Exception:
+            pass
             # не смогли нажать — мягко выходим
             return
 
