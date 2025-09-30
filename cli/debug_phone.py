@@ -39,7 +39,7 @@ async def debug_phone_extraction():
     
     async with async_playwright() as pw:
         context = await pw.chromium.launch_persistent_context(
-            user_data_dir=SETTINGS.user_data_dir,
+            user_data_dir="./pw_profiles",  # Используем основной профиль, созданный setup_auth
             headless=False,  # НЕ headless для визуального дебага
             slow_mo=0,  # Без задержек как в оригинале
             args=[
