@@ -154,8 +154,8 @@ class LeadRunner:
                 lead['name'] = full_name  # Обновляем имя в данных лида
             
             # Шаг 3: Отправляем шаблонное сообщение
-            await self.bot.send_template_message(dry_run=True)
-            logger.info("LeadRunner: sent template message (dry_run=True)")
+            await self.bot.send_template_message(dry_run=False)
+            logger.info("LeadRunner: sent template message (dry_run=False)")
             
             # Шаг 4: Извлекаем телефон (после отправки сообщения)
             logger.info("LeadRunner: waiting 3 seconds before extracting phone...")
