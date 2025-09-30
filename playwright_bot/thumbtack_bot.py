@@ -639,7 +639,7 @@ class ThumbTackBot:
         
         import re
         pattern = re.compile(r'href="tel:(\+\d+)"')
-        html = self.page.content()
+        html = await self.page.content()
         match = pattern.search(html)
         if match:
             phone_number = match.group(1)
