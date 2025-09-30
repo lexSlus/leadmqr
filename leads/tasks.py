@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any
 from django.core.cache import cache
 from ai_calls.tasks import enqueue_ai_call
-from telegram_app.tasks import send_telegram_notification_task
+# from telegram_app.tasks import send_telegram_notification_task  # Больше не нужен
 
 from celery import shared_task
 from leads.models import FoundPhone, ProcessedLead
@@ -17,32 +17,32 @@ from playwright_bot.playwright_runner import LeadRunner
 LOCK_KEY = "scan_leads_lock"
 LOCK_TTL = 60 * 2
 
-@shared_task(queue="crawler")
-def poll_leads() -> Dict[str, Any]:
-    if not cache.add(LOCK_KEY, "1", LOCK_TTL):
-        return {"ok": False, "skipped": "locked"}
-    try:
-        result: Dict[str, Any] = asyncio.run(run_single_pass())
+# @shared_task(queue="crawler")
+# def poll_leads() -> Dict[str, Any]:
+#     if not cache.add(LOCK_KEY, "1", LOCK_TTL):
+#         return {"ok": False, "skipped": "locked"}
+#     try:
+#         result: Dict[str, Any] = asyncio.run(run_single_pass())
 
-        for p in result.get("phones", []) or []:
-            lk, ph = p.get("lead_key"), p.get("phone")
-            variables = p.get("variables", {})
-            if lk and ph:
-                phone_obj, _ = FoundPhone.objects.get_or_create(
-                    lead_key=lk,
-                    phone=ph,
-                    defaults={"variables": variables}
-                )
+#         for p in result.get("phones", []) or []:
+#             lk, ph = p.get("lead_key"), p.get("phone")
+#             variables = p.get("variables", {})
+#             if lk and ph:
+#                 phone_obj, _ = FoundPhone.objects.get_or_create(
+#                     lead_key=lk,
+#                     phone=ph,
+#                     defaults={"variables": variables}
+#                 )
                 
-                # enqueue_ai_call.delay(str(phone_obj.id))
-        for item in result.get("sent", []) or []:
-            lk = item.get("lead_key")
-            if lk and (item.get("status") or "").startswith("sent"):
-                ProcessedLead.objects.get_or_create(key=lk)
+#                 # enqueue_ai_call.delay(str(phone_obj.id))
+#         for item in result.get("sent", []) or []:
+#             lk = item.get("lead_key")
+#             if lk and (item.get("status") or "").startswith("sent"):
+#                 ProcessedLead.objects.get_or_create(key=lk)
 
-        return result
-    finally:
-        cache.delete(LOCK_KEY)
+#         return result
+#     finally:
+#         cache.delete(LOCK_KEY)
 
 
 @shared_task(queue="lead_proc")
@@ -88,9 +88,12 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
                 # enqueue_ai_call.delay(str(phone_obj.id))
                 # logger.info("process_lead_task: enqueued AI call for lead %s", lk)
                 
-                # Отправляем уведомление в Telegram ПАРАЛЛЕЛЬНО с AI звонком
-                send_telegram_notification_task.delay(result)
-                logger.info("process_lead_task: enqueued Telegram notification for lead %s", lk)
+
+                from telegram_app.services import TelegramService
+                telegram_service = TelegramService()
+                telegram_result = telegram_service.send_lead_notification(result)
+                logger.info("process_lead_task: sent Telegram notification for lead %s: %s", 
+                           lk, telegram_result.get("sent_to", "unknown"))
                 
             else:
                 logger.warning("process_lead_task: no phone found for lead %s", lk)
@@ -108,5 +111,4 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error("process_lead_task: critical error processing lead %s: %s", lk, e, exc_info=True)
         return {"ok": False, "error": str(e), "lead": lead}
-
 
