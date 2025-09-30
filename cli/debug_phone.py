@@ -38,26 +38,35 @@ async def debug_phone_extraction():
     print("="*50)
     
     async with async_playwright() as pw:
-        context = await pw.chromium.launch_persistent_context(
-            user_data_dir="./pw_profiles",  # Используем основной профиль, созданный setup_auth
-            headless=False,  # НЕ headless для визуального дебага
-            slow_mo=0,  # Без задержек как в оригинале
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-features=VizDisplayCompositor",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-extensions",
-                "--disable-plugins",
-                "--remote-debugging-port=9222",
-                "--lang=en-US",
-                "--accept-lang=en-US,en;q=0.9",
-                "--disable-web-security",
-                "--disable-features=VizDisplayCompositor,TranslateUI",
-            ],
-            viewport=None,  # Как в оригинале
-        )
+        # Способ 1: Подключение к уже работающему браузеру через remote debugging
+        try:
+            print("🔗 Пытаемся подключиться к уже работающему браузеру...")
+            browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            print("✅ Подключились к работающему браузеру!")
+        except Exception as e:
+            print(f"❌ Не удалось подключиться к работающему браузеру: {e}")
+            print("🚀 Запускаем новый браузер...")
+            context = await pw.chromium.launch_persistent_context(
+                user_data_dir="./pw_profiles",  # Используем основной профиль, созданный setup_auth
+                headless=False,  # НЕ headless для визуального дебага
+                slow_mo=0,  # Без задержек как в оригинале
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-features=VizDisplayCompositor",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-extensions",
+                    "--disable-plugins",
+                    "--remote-debugging-port=9222",
+                    "--lang=en-US",
+                    "--accept-lang=en-US,en;q=0.9",
+                    "--disable-web-security",
+                    "--disable-features=VizDisplayCompositor,TranslateUI",
+                ],
+                viewport=None,  # Как в оригинале
+            )
 
         page = await context.new_page()
         bot = ThumbTackBot(page)
