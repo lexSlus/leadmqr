@@ -8,6 +8,8 @@ import sys
 import asyncio
 import logging
 import time
+import subprocess
+import signal
 from playwright.async_api import async_playwright
 
 # Добавляем путь к проекту
@@ -21,6 +23,7 @@ django.setup()
 
 from playwright_bot.config import SETTINGS
 from playwright_bot.thumbtack_bot import ThumbTackBot
+from telegram_app.services import TelegramService
 
 # Настройка логирования
 logging.basicConfig(
@@ -30,6 +33,88 @@ logging.basicConfig(
 
 logger = logging.getLogger("playwright_bot")
 
+# Глобальная переменная для хранения процесса Chrome
+chrome_process = None
+
+def start_chrome_with_debug():
+    """Запускает Chrome с remote debugging портом"""
+    global chrome_process
+    
+    print("🚀 Запускаем Chrome с remote debugging...")
+    
+    # Команда для запуска Chrome
+    chrome_cmd = [
+        "google-chrome",  # или "chromium-browser" для Chromium
+        "--remote-debugging-port=9222",
+        "--user-data-dir=./pw_profiles",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-features=VizDisplayCompositor",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-extensions",
+        "--disable-plugins",
+        "--lang=en-US",
+        "--accept-lang=en-US,en;q=0.9",
+        "--disable-web-security",
+        "--disable-features=VizDisplayCompositor,TranslateUI",
+    ]
+    
+    try:
+        # Запускаем Chrome в фоне
+        chrome_process = subprocess.Popen(
+            chrome_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid if os.name != 'nt' else None
+        )
+        
+        print("✅ Chrome запущен с PID:", chrome_process.pid)
+        print("🔗 Remote debugging доступен на http://localhost:9222")
+        
+        # Ждем немного, чтобы Chrome успел запуститься
+        time.sleep(3)
+        
+        return True
+        
+    except FileNotFoundError:
+        print("❌ Chrome не найден, пробуем Chromium...")
+        chrome_cmd[0] = "chromium-browser"
+        
+        try:
+            chrome_process = subprocess.Popen(
+                chrome_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid if os.name != 'nt' else None
+            )
+            
+            print("✅ Chromium запущен с PID:", chrome_process.pid)
+            time.sleep(3)
+            return True
+            
+        except FileNotFoundError:
+            print("❌ Ни Chrome, ни Chromium не найдены!")
+            return False
+
+def stop_chrome():
+    """Останавливает Chrome"""
+    global chrome_process
+    
+    if chrome_process:
+        print("🛑 Останавливаем Chrome...")
+        try:
+            if os.name != 'nt':
+                os.killpg(os.getpgid(chrome_process.pid), signal.SIGTERM)
+            else:
+                chrome_process.terminate()
+            chrome_process.wait(timeout=5)
+            print("✅ Chrome остановлен")
+        except:
+            print("⚠️ Принудительно завершаем Chrome...")
+            chrome_process.kill()
+        chrome_process = None
+
 async def debug_phone_extraction():
     """Дебаг извлечения телефонов - как в run_single_pass, но только телефоны"""
     print("🔍 Дебаг извлечения телефонов...")
@@ -37,36 +122,25 @@ async def debug_phone_extraction():
     print("🛑 Нажмите Ctrl+C для остановки")
     print("="*50)
     
+    # Запускаем Chrome с debug портом
+    if not start_chrome_with_debug():
+        print("❌ Не удалось запустить Chrome, завершаем...")
+        return
+    
+    print("🔐 Теперь залогиньтесь в Thumbtack в открывшемся браузере...")
+    print("⏳ Ждем 30 секунд для авторизации...")
+    await asyncio.sleep(30)
+    
     async with async_playwright() as pw:
-        # Способ 1: Подключение к уже работающему браузеру через remote debugging
+        # Подключаемся к уже работающему браузеру через remote debugging
         try:
-            print("🔗 Пытаемся подключиться к уже работающему браузеру...")
+            print("🔗 Подключаемся к Chrome через remote debugging...")
             browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
             context = browser.contexts[0] if browser.contexts else await browser.new_context()
-            print("✅ Подключились к работающему браузеру!")
+            print("✅ Подключились к Chrome!")
         except Exception as e:
-            print(f"❌ Не удалось подключиться к работающему браузеру: {e}")
-            print("🚀 Запускаем новый браузер...")
-            context = await pw.chromium.launch_persistent_context(
-                user_data_dir="./pw_profiles",  # Используем основной профиль, созданный setup_auth
-                headless=False,  # НЕ headless для визуального дебага
-                slow_mo=0,  # Без задержек как в оригинале
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-features=VizDisplayCompositor",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-extensions",
-                    "--disable-plugins",
-                    "--remote-debugging-port=9222",
-                    "--lang=en-US",
-                    "--accept-lang=en-US,en;q=0.9",
-                    "--disable-web-security",
-                    "--disable-features=VizDisplayCompositor,TranslateUI",
-                ],
-                viewport=None,  # Как в оригинале
-            )
+            print(f"❌ Не удалось подключиться к Chrome: {e}")
+            return
 
         page = await context.new_page()
         bot = ThumbTackBot(page)
@@ -81,7 +155,7 @@ async def debug_phone_extraction():
             
             # Кликаем по первому сообщению, чтобы открыть детали лида
             print("🔍 Ищем первое сообщение для открытия деталей лида...")
-            threads = bot._threads()
+            threads = await bot._threads()  # Добавляем await!
             thread_count = await threads.count()
             print(f"📧 Найдено {thread_count} сообщений")
             
@@ -102,40 +176,37 @@ async def debug_phone_extraction():
             # Создаем фиктивный результат для совместимости
             phones = [{"phone": phone, "lead_key": "test_lead", "href": page.url}] if phone else []
             
-            # Тестируем метод _extract_phone_for_lead (БЫСТРАЯ ВЕРСИЯ)
-            if phones:
-                print("\n🔍 Тестируем _extract_phone_for_lead (быстрая версия)...")
-                
-                # Создаем быстрый объект для тестирования метода
-                class FastTestRunner:
-                    def __init__(self, phones_data):
-                        self.phones_data = phones_data
+            # Отправляем Telegram уведомление если телефон найден
+            if phone:
+                print("\n📱 Отправляем Telegram уведомление...")
+                try:
+                    # Создаем тестовые данные для Telegram
+                    test_result = {
+                        "variables": {
+                            "name": "Debug Test Client",
+                            "category": "Phone Extraction Test", 
+                            "location": "Debug Location",
+                            "lead_url": page.url
+                        },
+                        "phone": phone,
+                        "lead_key": "debug_test_phone"
+                    }
                     
-                    async def _extract_phone_for_lead(self, lead_key: str):
-                        # Используем уже полученные данные вместо повторного вызова
-                        for row in self.phones_data or []:
-                            if (str(row.get("lead_key") or "") == str(lead_key)) and row.get("phone"):
-                                phone = str(row["phone"]).strip()
-                                print(f"PHONE FOUND for {lead_key} -> {phone}")
-                                return phone
-                        print(f"PHONE NOT FOUND for {lead_key} (rows checked={len(self.phones_data or [])})")
-                        return None
-                
-                runner = FastTestRunner(phones)
-                
-                # Берем первый lead_key для теста
-                first_lead_key = phones[0].get("lead_key")
-                if first_lead_key:
-                    print(f"🎯 Тестируем поиск телефона для lead_key: {first_lead_key}")
-                    found_phone = await runner._extract_phone_for_lead(first_lead_key)
-                    print(f"📱 Найденный телефон: {found_phone}")
+                    # Отправляем уведомление
+                    telegram_service = TelegramService()
+                    telegram_result = telegram_service.send_lead_notification(test_result)
                     
-                    # Тестируем с несуществующим lead_key
-                    fake_lead_key = "fake_lead_key_123"
-                    print(f"🎯 Тестируем с несуществующим lead_key: {fake_lead_key}")
-                    not_found_phone = await runner._extract_phone_for_lead(fake_lead_key)
-                    print(f"📱 Результат для несуществующего: {not_found_phone}")
-            
+                    if telegram_result.get("success"):
+                        print(f"✅ Telegram уведомление отправлено: {telegram_result.get('sent_to', 'unknown')}")
+                    else:
+                        print(f"❌ Telegram уведомление не отправлено: {telegram_result.get('error', 'unknown error')}")
+                        
+                except Exception as e:
+                    print(f"❌ Ошибка при отправке Telegram: {e}")
+            else:
+                print("📱 Телефон не найден, Telegram уведомление не отправляется")
+        
+        
             return {
                 "ok": True,
                 "phones": phones,
@@ -148,6 +219,9 @@ async def debug_phone_extraction():
             print(f"Ошибка: {e}")
             import traceback
             traceback.print_exc()
+        finally:
+            # Останавливаем Chrome
+            stop_chrome()
 
 def main():
     """Главная функция"""
