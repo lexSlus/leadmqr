@@ -182,9 +182,9 @@ class LeadProducer:
                         log.warning("LeadProducer[cycle=%d]: skip lead without lead_key: %s", cycle_count, lead)
                         continue
 
-                       if lk in self.sent_leads:
-                           log.info("LeadProducer[cycle=%d]: skip already sent lead %s", cycle_count, lk)
-                           continue
+                    if lk in self.sent_leads:
+                        log.info("LeadProducer[cycle=%d]: skip already sent lead %s", cycle_count, lk)
+                        continue
 
                     self.flow.mark(lk, "detect")
                     
@@ -195,7 +195,7 @@ class LeadProducer:
                         queue="lead_proc",
                         retry=False,
                     )
-                       self.sent_leads.add(lk)
+                    self.sent_leads.add(lk)
                     processed_count += 1
                     log.info("LeadProducer[cycle=%d]: enqueued lead %s", cycle_count, lk)
 
