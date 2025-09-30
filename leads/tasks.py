@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any
 from django.core.cache import cache
 from ai_calls.tasks import enqueue_ai_call
-# from telegram_app.tasks import send_telegram_notification_task  # Больше не нужен
+from telegram_app.tasks import send_telegram_notification_task
 
 from celery import shared_task
 from leads.models import FoundPhone, ProcessedLead
@@ -89,9 +89,7 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
                 # logger.info("process_lead_task: enqueued AI call for lead %s", lk)
                 
 
-                from telegram_app.services import TelegramService
-                telegram_service = TelegramService()
-                telegram_result = telegram_service.send_lead_notification(result)
+                send_telegram_notification_task.delay(result)
                 logger.info("process_lead_task: sent Telegram notification for lead %s: %s", 
                            lk, telegram_result.get("sent_to", "unknown"))
                 
