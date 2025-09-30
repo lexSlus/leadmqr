@@ -637,138 +637,17 @@ class ThumbTackBot:
         Returns cleaned phone number (digits and + only) or None if not found.
         """
         
-        # Method 1: Look for "Click to show phone number" button first (most common case)
-        show_phone_button = self.page.locator("button:has-text('Click to show phone number')")
-        button_count = await show_phone_button.count()
-        
-        # Try alternative selectors for phone button
-        if button_count == 0:
-            show_phone_button = self.page.locator("button._3HFh8Wm0kL8FRvqW7u0LOA")
-            button_count = await show_phone_button.count()
-            
-        if button_count == 0:
-            show_phone_button = self.page.locator("button[role='button']:has-text('show phone')")
-            button_count = await show_phone_button.count()
-            
-        if button_count == 0:
-            show_phone_button = self.page.locator("button:has-text('phone')")
-            button_count = await show_phone_button.count()
-        
-        if button_count > 0:
-            try:
-                await show_phone_button.first.click()
-                await self.page.wait_for_timeout(1000)  # Short wait for phone to appear
-                
-                # Try to find phone after clicking
-                tel_link = self.page.locator("a[href^='tel:']")
-                tel_count = await tel_link.count()
-                
-                if tel_count > 0:
-                    try:
-                        raw_href = await tel_link.first.get_attribute("href") or ""
-                        phone = raw_href.replace("tel:", "")
-                        if phone:
-                            cleaned_phone = re.sub(r"[^\d+]", "", phone)
-                            return cleaned_phone
-                    except Exception as e:
-                        logger.error(f"Error extracting tel href after click: {e}")
-                
-                # Also try text element after clicking
-                phone_text_element = self.page.locator(".IUE7kXgIsvED2G8vml4Wu")
-                text_count = await phone_text_element.count()
-                
-                if text_count > 0:
-                    try:
-                        phone_text = await phone_text_element.first.text_content() or ""
-                        if phone_text:
-                            cleaned_phone = re.sub(r"[^\d+]", "", phone_text)
-                            if cleaned_phone:
-                                return cleaned_phone
-                    except Exception as e:
-                        logger.error(f"Error extracting text content after click: {e}")
-                        
-            except Exception as e:
-                logger.error(f"Error clicking show phone button: {e}")
-        
-        # Method 2: Look for tel: links (already visible)
-        tel_link = self.page.locator("a[href^='tel:']")
-        tel_count = await tel_link.count()
-        logger.warning(f"[DEBUG] Method 2 - tel: links count: {tel_count}")
-        if tel_count > 0:
-            try:
-                raw_href = await tel_link.first.get_attribute("href") or ""
-                phone = raw_href.replace("tel:", "")
-                if phone:
-                    cleaned_phone = re.sub(r"[^\d+]", "", phone)
-                    return cleaned_phone
-            except Exception as e:
-                logger.error(f"Error extracting tel href: {e}")
-        
-        # Method 3: Search for phone pattern in page text (with filtering)
-        logger.warning("[_show_and_extract_in_current_thread] Method 3 - Searching for phone pattern in page text")
-        try:
-            page_text = await self.page.text_content("body")
-            if page_text:
-                phone_pattern = re.compile(r'\+?1?[-.\s]?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}')
-                matches = phone_pattern.findall(page_text)
-                logger.warning(f"[DEBUG] Method 3 - found {len(matches)} phone pattern matches")
-
-                # Фильтруем известные системные номера Thumbtack
-                excluded_phones = [
-                    '5511455460',  # Thumbtack support number
-                    '415-801-2000',  # Thumbtack main number
-                    '4158012000',
-                    '800-123-4567',  # Common placeholder numbers
-                    '555-123-4567',
-                    '5551234567'
-                ]
-
-                for match in matches:
-                    phone = match.strip()
-                    cleaned_phone = re.sub(r'[^\d+]', '', phone)
-
-                    # Пропускаем известные системные номера
-                    if cleaned_phone in excluded_phones or phone in excluded_phones:
-                        logger.info(f"[_show_and_extract_in_current_thread] Method 3 - skipping known system number: {phone}")
-                        continue
-
-                    # Пропускаем номера, которые выглядят как системные (начинаются с 551, 415, 800, 555)
-                    if cleaned_phone.startswith(('551', '415', '800', '555')):
-                        logger.info(f"[_show_and_extract_in_current_thread] Method 3 - skipping system-like number: {phone}")
-                        continue
-
-                    logger.info(f"[_show_and_extract_in_current_thread] Method 3 - found valid phone via text pattern: {phone}")
-                    return phone
-
-                logger.warning(f"[_show_and_extract_in_current_thread] Method 3 - all {len(matches)} found phones were filtered out as system numbers")
-
-        except Exception as e:
-            logger.error(f"Error searching page text: {e}")
-        
-        logger.warning("[_show_and_extract_in_current_thread] No phone found using any method")
-        
-        # DEBUG: Сохраняем скриншот и HTML для анализа
-        try:
-            import os
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            debug_dir = "/app/debug"
-            os.makedirs(debug_dir, exist_ok=True)
-            
-            screenshot_path = f"{debug_dir}/phone_not_found_{timestamp}.png"
-            await self.page.screenshot(path=screenshot_path)
-            logger.warning(f"[DEBUG] Saved screenshot: {screenshot_path}")
-            
-            html_path = f"{debug_dir}/phone_not_found_{timestamp}.html"
-            page_content = await self.page.content()
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(page_content)
-            logger.warning(f"[DEBUG] Saved HTML: {html_path}")
-            logger.warning(f"[DEBUG] Page URL: {self.page.url}")
-        except Exception as e:
-            logger.error(f"[DEBUG] Error saving debug info: {e}")
-        
-        return None
+        import re
+        pattern = re.compile(r'href="tel:(\+\d+)"')
+        html = self.page.content()
+        match = pattern.search(html)
+        if match:
+            phone_number = match.group(1)
+            print("Найден номер:", phone_number)
+            return phone_number
+        else:
+            print("Телефон не найден")
+            return None
 
 
     async def extract_phones_from_all_threads(self, store=None) -> List[Dict[str, Any]]:
