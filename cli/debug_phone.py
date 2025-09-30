@@ -33,61 +33,96 @@ logging.basicConfig(
 
 logger = logging.getLogger("playwright_bot")
 
-# Глобальная переменная для хранения процесса Chrome
-chrome_process = None
+async def debug_phone_extraction():
+    """Дебаг извлечения телефонов - как в run_single_pass, но только телефоны"""
+    print("🔍 Дебаг извлечения телефонов...")
+    print("📞 Пропускаем лиды, сразу к извлечению телефонов")
+    print("🛑 Нажмите Ctrl+C для остановки")
+    print("="*50)
+    
+    async with async_playwright() as pw:
+        # Способ 1: Подключение к уже работающему браузеру через remote debugging
+        try:
+            print("🔗 Пытаемся подключиться к уже работающему браузеру...")
+            browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            print("✅ Подключились к работающему браузеру!")
+        except Exception as e:
+            print(f"❌ Не удалось подключиться к работающему браузеру: {e}")
+            print("🚀 Запускаем новый браузер...")
+            context = await pw.chromium.launch_persistent_context(
+                user_data_dir="./pw_profiles",  # Используем основной профиль, созданный setup_auth
+                headless=False,  # НЕ headless для визуального дебага
+                slow_mo=0,  # Без задержек как в оригинале
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-features=VizDisplayCompositor",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-extensions",
+                    "--disable-plugins",
+                    "--remote-debugging-port=9222",
+                    "--lang=en-US",
+                    "--accept-lang=en-US,en;q=0.9",
+                    "--disable-web-security",
+                    "--disable-features=VizDisplayCompositor,TranslateUI",
+                ],
+                viewport=None,  # Как в оригинале
+            )
+            
+            print("✅ Chromium запущен с PID:", chrome_process.pid)
+            time.sleep(3)
+            return True
+            
+        except FileNotFoundError:
+            print("❌ Ни Chrome, ни Chromium не найдены!")
+            return False
 
-def start_chrome_with_debug():
-    """Запускает Chrome с remote debugging портом"""
+def stop_chrome():
+    """Останавливает Chrome"""
     global chrome_process
     
-    print("🚀 Запускаем Chrome с remote debugging...")
-    
-    # Команда для запуска Chrome
-    chrome_cmd = [
-        "google-chrome",  # или "chromium-browser" для Chromium
-        "--remote-debugging-port=9222",
-        "--user-data-dir=./pw_profiles",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-features=VizDisplayCompositor",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-extensions",
-        "--disable-plugins",
-        "--lang=en-US",
-        "--accept-lang=en-US,en;q=0.9",
-        "--disable-web-security",
-        "--disable-features=VizDisplayCompositor,TranslateUI",
-    ]
-    
-    try:
-        # Запускаем Chrome в фоне
-        chrome_process = subprocess.Popen(
-            chrome_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            preexec_fn=os.setsid if os.name != 'nt' else None
-        )
-        
-        print("✅ Chrome запущен с PID:", chrome_process.pid)
-        print("🔗 Remote debugging доступен на http://localhost:9222")
-        
-        # Ждем немного, чтобы Chrome успел запуститься
-        time.sleep(3)
-        
-        return True
-        
-    except FileNotFoundError:
-        print("❌ Chrome не найден, пробуем Chromium...")
-        chrome_cmd[0] = "chromium-browser"
-        
+    if chrome_process:
+        print("🛑 Останавливаем Chrome...")
         try:
-            chrome_process = subprocess.Popen(
-                chrome_cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid if os.name != 'nt' else None
-            )
+            if os.name != 'nt':
+                os.killpg(os.getpgid(chrome_process.pid), signal.SIGTERM)
+            else:
+                chrome_process.terminate()
+            chrome_process.wait(timeout=5)
+            print("✅ Chrome остановлен")
+        except:
+            print("⚠️ Принудительно завершаем Chrome...")
+            chrome_process.kill()
+        chrome_process = None
+
+async def debug_phone_extraction():
+    """Дебаг извлечения телефонов - как в run_single_pass, но только телефоны"""
+    print("🔍 Дебаг извлечения телефонов...")
+    print("📞 Пропускаем лиды, сразу к извлечению телефонов")
+    print("🛑 Нажмите Ctrl+C для остановки")
+    print("="*50)
+    
+    # Запускаем Chrome с debug портом
+    if not start_chrome_with_debug():
+        print("❌ Не удалось запустить Chrome, завершаем...")
+        return
+    
+    print("🔐 Теперь залогиньтесь в Thumbtack в открывшемся браузере...")
+    print("⏳ Ждем 30 секунд для авторизации...")
+    await asyncio.sleep(30)
+    
+    async with async_playwright() as pw:
+        # Подключаемся к уже работающему браузеру через remote debugging
+        try:
+            print("🔗 Подключаемся к Chrome через remote debugging...")
+            browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            print("✅ Подключились к Chrome!")
+        except Exception as e:
+            print(f"❌ Не удалось подключиться к Chrome: {e}")
+            return
             
             print("✅ Chromium запущен с PID:", chrome_process.pid)
             time.sleep(3)
