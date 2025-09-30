@@ -730,6 +730,7 @@ class ThumbTackBot:
                         "source": "thumbtack"
                     }
                 })
+                break
                 
             except Exception as e:
                 # Добавляем запись об ошибке, чтобы не потерять информацию
