@@ -202,7 +202,7 @@ class LeadProducer:
                 log.info("LeadProducer[cycle=%d]: processed %d/%d leads", cycle_count, processed_count, len(leads))
                 
                 # Адаптивная задержка: если есть лиды - ждем дольше, чтобы LeadRunner успел обработать
-                delay = 10.0 if leads else 30.0  # 10 секунд если есть лиды, 30 секунд если нет
+                delay = 5.0
                 await asyncio.sleep(delay)
                 
             except Exception as e:
