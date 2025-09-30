@@ -134,40 +134,53 @@ class ThumbTackBot:
 
 
     async def open_leads(self):
+        """
+        ✔️ ИЗМЕНЕНО: Максимально упрощенный метод. Только навигация и логин.
+        Никаких ожиданий контента.
+        """
+        logger.info("ThumbTackBot: opening /pro-leads page...")
+        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=15000)
         
-        await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=10000)
-        
-        # Если все еще на login - пробуем авторизацию
         if "login" in self.page.url.lower():
+            logger.warning("ThumbTackBot: login page detected, attempting authentication...")
             await self.login_if_needed()
-            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=10000)
+            # После логина снова переходим на нужную страницу для чистоты эксперимента
+            await self.page.goto(f"{SETTINGS.base_url}/pro-leads", wait_until="domcontentloaded", timeout=15000)
 
-        # Ждём загрузку DOM
-        try:
-            await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
-        except PWTimeoutError:
-            pass
+        logger.info("ThumbTackBot: navigation to /pro-leads complete. Current URL: %s", self.page.url)
 
 
     async def list_new_leads(self) -> List[Dict]:
+        """
+        ✔️ ИЗМЕНЕНО: Надежно находит новые лиды, используя явное ожидание
+        появления карточек вместо ожидания состояния сети.
+        """
         results: List[Dict] = []
-        try:
-            await self.page.wait_for_load_state("networkidle", timeout=2000)
-        except Exception as e:
-            logger.warning("[list_new_leads] wait_for_load_state failed: %s", e)
-        ctx = self.page
+        ctx = self.page # По умолчанию работаем с основной страницей
+        
+        # Попытка найти активный фрейм, если он есть
         for fr in self.page.frames:
             if "thumbtack.com" in fr.url and fr is not self.page:
                 ctx = fr
                 break
+
+        # Определяем локатор для карточек с лидами
         anchors = ctx.locator("a[href^='/pro-leads/']")
         view_text = re.compile(r"view\s*details", re.I)
         cards = anchors.filter(has=ctx.get_by_text(view_text))
-        try:
-            await cards.first.wait_for(state="visible", timeout=2000)
-        except Exception:
-            pass
 
+        try:
+            # ГЛАВНОЕ ИЗМЕНЕНИЕ: Терпеливо ждем появления первой карточки.
+            # Даем ей до 20 секунд, чтобы React успел все загрузить и отрисовать.
+            await cards.first.wait_for(state="visible", timeout=20000)
+            logger.info("[list_new_leads] Lead cards are visible. Proceeding with extraction.")
+        except PWTimeoutError:
+            # Если за 20 секунд ничего не появилось, значит, новых лидов действительно нет.
+            logger.info("[list_new_leads] No lead cards found within the timeout. Assuming no new leads.")
+            print("[leads] found: 0")
+            return results
+
+        # Если мы дошли досюда, карточки точно есть на странице.
         count = await cards.count()
 
         for i in range(count):
@@ -180,19 +193,15 @@ class ThumbTackBot:
             loc_node = a.locator("svg + .flex-auto ._3iW9xguFAEzNAGlyAo5Hw7").first
             location = await loc_node.inner_text() if await loc_node.count() > 0 else ""
 
-            # Извлекаем ID из href (например, "/pro-leads/559232321399726108" -> "559232321399726108")
-            # Если href не начинается с "/pro-leads/", генерируем lead_id из всего href
             if href.startswith("/pro-leads/"):
                 lead_id = href.replace("/pro-leads/", "")
             else:
-                # Генерируем lead_id из href для других случаев
-                import hashlib
-                lead_id = hashlib.md5((href or "").encode("utf-8")).hexdigest()[:12]  # Первые 12 символов MD5
+                lead_id = hashlib.md5((href or "").encode("utf-8")).hexdigest()[:12]
             
             item = {
                 "index": i,
                 "href": href,
-                "lead_id": lead_id,  # Добавляем ID лида
+                "lead_id": lead_id,
                 "lead_key": self.lead_key_from_url(href),
                 "name": name.strip(),
                 "category": category.strip(),

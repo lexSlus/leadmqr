@@ -29,12 +29,14 @@ class LeadProducer:
         self.redis: Optional[aioredis.Redis] = None
         self.user_dir = SETTINGS.user_data_dir  # Используем фиксированную директорию как в run_single_pass
         self.flow = FlowTimer(redis_url=dj_settings.REDIS_URL)
+        self.sent_leads = set()  # Кэш отправленных лидов для предотвращения дубликатов
 
     async def _acquire(self) -> bool:
         return bool(await self.redis.set(LEASE_KEY, "1", ex=LEASE_TTL, nx=True))
 
     async def _renew(self):  await self.redis.expire(LEASE_KEY, LEASE_TTL)
     async def _hb(self):     await self.redis.set(HEARTBEAT_KEY, "1", ex=HEARTBEAT_TTL)
+    
 
 
     async def start(self):
@@ -62,8 +64,20 @@ class LeadProducer:
         )
         self.page = await self._ctx.new_page()
         
-        # Блокируем ненужные ресурсы для ускорения
-        await self.page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "font", "media"] else route.continue_())
+        # Блокируем ненужные ресурсы для ускорения и добавляем заголовки против кеширования
+        async def handle_route(route):
+            if route.request.resource_type in ["image", "font", "media"]:
+                await route.abort()
+            else:
+                # Добавляем заголовки против кеширования для API запросов
+                headers = route.request.headers
+                if "api" in route.request.url or "leads" in route.request.url:
+                    headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                    headers["Pragma"] = "no-cache"
+                    headers["Expires"] = "0"
+                await route.continue_(headers=headers)
+        
+        await self.page.route("**/*", handle_route)
         
         self.bot = ThumbTackBot(self.page)
         
@@ -107,17 +121,59 @@ class LeadProducer:
                 cycle_count += 1
                 await self._renew()
                 await self._hb()
+                
 
                 # Проверяем, что браузер еще открыт
                 if self.page.is_closed():
                     log.error("LeadProducer[cycle=%d]: browser closed, stopping", cycle_count)
                     break
 
+                # Принудительно перезагружаем страницу для обновления кэша (hard reload)
+                await self.page.evaluate("() => { window.location.reload(true); }")
+                # Ждем только базовую загрузку, не networkidle (React может загружаться долго)
+                await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
+                log.info("LeadProducer[cycle=%d]: hard reloaded page for fresh content", cycle_count)
+                
+                # Открываем страницу лидов с детальным логированием
+                log.info("LeadProducer[cycle=%d]: opening /leads page...", cycle_count)
                 await self.bot.open_leads()
                 log.info("LeadProducer[cycle=%d]: opened /leads (url=%s)", cycle_count, self.page.url)
                 
+                # Проверяем авторизацию - если редиректнуло на логин, переавторизуемся
+                if "login" in self.page.url.lower():
+                    log.warning("LeadProducer[cycle=%d]: redirected to login, re-authenticating...", cycle_count)
+                    await self.bot.login_if_needed()
+                    await self.bot.open_leads()
+                    log.info("LeadProducer[cycle=%d]: re-authenticated, current URL: %s", cycle_count, self.page.url)
+                
+                # Проверяем что страница загрузилась корректно
+                try:
+                    page_title = await self.page.title()
+                    log.info("LeadProducer[cycle=%d]: page title: %s", cycle_count, page_title)
+                except Exception as e:
+                    log.warning("LeadProducer[cycle=%d]: failed to get page title: %s", cycle_count, e)
+                
+                # Ищем лиды с детальным логированием
+                log.info("LeadProducer[cycle=%d]: searching for leads...", cycle_count)
                 leads: List[Dict[str, Any]] = await self.bot.list_new_leads()
                 log.info("LeadProducer[cycle=%d]: found %d leads", cycle_count, len(leads))
+                
+                # Детальная информация о найденных лидах
+                if leads:
+                    for i, lead in enumerate(leads):
+                        log.info("LeadProducer[cycle=%d]: lead[%d]: key=%s, name=%s, category=%s", 
+                                cycle_count, i, lead.get('lead_key'), lead.get('name'), lead.get('category'))
+                else:
+                    log.warning("LeadProducer[cycle=%d]: no leads found - checking page content...", cycle_count)
+                    # Проверяем содержимое страницы для отладки
+                    try:
+                        page_content = await self.page.content()
+                        log.info("LeadProducer[cycle=%d]: page content length: %d chars", cycle_count, len(page_content))
+                        # Проверяем есть ли элементы лидов на странице
+                        lead_elements = await self.page.locator('[data-testid*="lead"], .lead, [class*="lead"]').count()
+                        log.info("LeadProducer[cycle=%d]: found %d potential lead elements on page", cycle_count, lead_elements)
+                    except Exception as e:
+                        log.warning("LeadProducer[cycle=%d]: failed to analyze page content: %s", cycle_count, e)
                 
                 processed_count = 0
                 for lead in leads:
@@ -126,9 +182,12 @@ class LeadProducer:
                         log.warning("LeadProducer[cycle=%d]: skip lead without lead_key: %s", cycle_count, lead)
                         continue
 
-                    self.flow.mark(lk, "detect")
+                    # ВРЕМЕННО УБРАЛИ МЬЮТЕКС - пусть крутится для диагностики
+                    # if lk in self.sent_leads:
+                    #     log.info("LeadProducer[cycle=%d]: skip already sent lead %s", cycle_count, lk)
+                    #     continue
 
-                    # Убираем проверку - всегда ставим лиды в очередь для тестирования
+                    self.flow.mark(lk, "detect")
                     
                     # Отправляем в очередь на обработку
                     celery_app.send_task(
@@ -137,13 +196,14 @@ class LeadProducer:
                         queue="lead_proc",
                         retry=False,
                     )
+                    # self.sent_leads.add(lk)  # ВРЕМЕННО УБРАЛИ
                     processed_count += 1
                     log.info("LeadProducer[cycle=%d]: enqueued lead %s", cycle_count, lk)
 
                 log.info("LeadProducer[cycle=%d]: processed %d/%d leads", cycle_count, processed_count, len(leads))
                 
-                # Адаптивная задержка: меньше лидов = больше задержка
-                delay = 0.5 if leads else 1.0
+                # Адаптивная задержка: если есть лиды - ждем дольше, чтобы LeadRunner успел обработать
+                delay = 10.0 if leads else 30.0  # 10 секунд если есть лиды, 30 секунд если нет
                 await asyncio.sleep(delay)
                 
             except Exception as e:
