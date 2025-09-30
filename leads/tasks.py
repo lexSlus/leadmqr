@@ -89,11 +89,11 @@ def process_lead_task(lead: Dict[str, Any]) -> Dict[str, Any]:
                 # enqueue_ai_call.delay(str(phone_obj.id))
                 # logger.info("process_lead_task: enqueued AI call for lead %s", lk)
                 variables = result.get("variables", {})
-                message = (f"🚨 <b>New Lead Ready for Call!</b>\n"
-                           f"👤 <b>Client:</b> {variables.get("name", "Unknown")}\n"
-                           f"🏠 <b>Category:</b> {variables.get("category", "Unknown")}\n"
-                           f"📍 <b>Location:</b> {variables.get("location", "Unknown")}\n"
-                           f"📞 <b>PHONE:</b> <code>{result.get("phone", "Unknown")}</code>\n"
+                message = (f'🚨 <b>New Lead Ready for Call!</b>\n'
+                           f'👤 <b>Client:</b> {variables.get("name", "Unknown")}\n'
+                           f'🏠 <b>Category:</b> {variables.get("category", "Unknown")}\n'
+                           f'📍 <b>Location:</b> {variables.get("location", "Unknown")}\n'
+                           f'📞 <b>PHONE:</b> <code>{result.get("phone", "Unknown")}</code>\n'
                            f'🔗 <b>Link:</b> <a href="{variables.get("lead_url", "")}">Open Lead</a>')
 
                 result = send_telegram_message(
