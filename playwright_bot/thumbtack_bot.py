@@ -272,6 +272,7 @@ class ThumbTackBot:
             logger.error(f"Error extracting full name from details: {e}")
             return None
 
+
     async def send_template_message(self, text: Optional[str] = None, *, dry_run: bool = False) -> None:
         text = text or SETTINGS.message_template
         logger.info(f"ThumbTackBot: send_template_message started, dry_run={dry_run}")
@@ -651,101 +652,49 @@ class ThumbTackBot:
 
 
     async def extract_phones_from_all_threads(self, store=None) -> List[Dict[str, Any]]:
-        # Пробуем открыть сообщения с retry логикой
-        max_retries = 2
-        for attempt in range(max_retries):
-            try:
-                await self.open_messages()
-                break  # Успешно открыли сообщения
-            except Exception:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(3)  # Небольшая пауза перед retry
-                else:
-                    return []  # Возвращаем пустой список при ошибке
-        
-        threads = await self._threads()
-        total = await threads.count()
-
-        if total == 0:
-            await self._run_diagnostics("no_threads_in_extract")
-            return []
-
-        results: List[Dict[str, Any]] = []
-        for i in range(total):
-            try:
-                row = threads.nth(i)
-                href = await row.get_attribute("href") or ""
-                lead_key = self.lead_key_from_url(href)
-
-                # анти-спам по тредам
-                if store is not None and store.should_skip_thread(href):
-                    results.append({
-                        "index": i,
-                        "href": href,
-                        "lead_key": lead_key,
-                        "phone": store.phone_for_thread(href),
-                        "status": "skipped_already_seen",
-                        "variables": {
-                            "lead_id": lead_key,
-                            "lead_url": f"https://www.thumbtack.com{href}",
-                            "source": "thumbtack"
-                        }
-                    })
-                    continue
-
-                # Прокручиваем к элементу и кликаем
-                await row.scroll_into_view_if_needed()
-                await self.page.wait_for_timeout(500)  # Даем время на прокрутку
-                
-                # Проверяем, что элемент видимый перед кликом
-                try:
-                    await row.wait_for(state="visible", timeout=3000)
-                except Exception:
-                    pass
-                
-                await row.click(force=True)
-                
-                # Ждем загрузки страницы треда
-                try:
-                    await self.page.wait_for_url(re.compile(r"/pro-inbox/messages/\d+"), timeout=8000)
-                    await self.page.wait_for_load_state("domcontentloaded", timeout=5000)
-                    await self.page.wait_for_timeout(1500)  # Даем время на полную загрузку
-                except Exception as e:
-                    pass
-
-                phone = await self._show_and_extract_in_current_thread()
-                
-                if store is not None:
-                    store.mark_thread_seen(href, phone)
-
-                results.append({
-                    "index": i,
+        """Упрощенная версия - извлекает телефон только из первого треда"""
+        try:
+            # Открываем сообщения
+            await self.open_messages()
+            
+            # Получаем первый тред
+            threads = await self._threads()
+            if await threads.count() == 0:
+                return []
+            
+            # Берем первый тред
+            first_thread = threads.nth(0)
+            href = await first_thread.get_attribute("href") or ""
+            lead_key = self.lead_key_from_url(href)
+            
+            # Проверяем анти-спам
+            if store and store.should_skip_thread(href):
+                return [{
                     "href": href,
                     "lead_key": lead_key,
-                    "phone": phone,
-                    "status": "processed",
-                    "variables": {
-                        "lead_id": lead_key,
-                        "lead_url": f"https://www.thumbtack.com{href}",
-                        "source": "thumbtack"
-                    }
-                })
-                break
-                
-            except Exception as e:
-                # Добавляем запись об ошибке, чтобы не потерять информацию
-                results.append({
-                    "index": i,
-                    "href": href if 'href' in locals() else "",
-                    "lead_key": lead_key if 'lead_key' in locals() else "",
-                    "phone": None,
-                    "status": "error",
-                    "error": str(e),
-                    "variables": {
-                        "lead_id": lead_key if 'lead_key' in locals() else "",
-                        "lead_url": f"https://www.thumbtack.com{href}" if 'href' in locals() else "",
-                        "source": "thumbtack"
-                    }
-                })
-
-        return results
+                    "phone": store.phone_for_thread(href),
+                    "status": "skipped_already_seen",
+                    "variables": {"lead_id": lead_key, "lead_url": f"https://www.thumbtack.com{href}", "source": "thumbtack"}
+                }]
+            
+            # Кликаем на первый тред
+            await first_thread.click(force=True)
+            
+            # Извлекаем телефон (без ожидания - HTML уже загружен)
+            phone = await self._show_and_extract_in_current_thread()
+            
+            # Сохраняем в store
+            if store:
+                store.mark_thread_seen(href, phone)
+            
+            return [{
+                "href": href,
+                "lead_key": lead_key,
+                "phone": phone,
+                "status": "processed",
+                "variables": {"lead_id": lead_key, "lead_url": f"https://www.thumbtack.com{href}", "source": "thumbtack"}
+            }]
+            
+        except Exception as e:
+            logger.error(f"Error extracting phone from first thread: {e}")
+            return []

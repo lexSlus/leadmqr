@@ -141,8 +141,7 @@ class TelegramService:
             
             for subscriber in subscribers:
                 try:
-                    # ✅ ИСПРАВЛЕНИЕ: Создаем новый клиент для каждого подписчика
-                    # Это избегает изменения состояния существующего клиента
+
                     client = TelegramBotClient()
                     client.chat_id = str(subscriber.chat_id)
                     
