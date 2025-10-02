@@ -529,6 +529,8 @@ class ThumbTackBot:
                     await self._run_diagnostics("react_load_failure")
                     raise Exception("Could not load the messages page content after all retries. Aborting.")
     
+    
+    
     async def _run_diagnostics(self, failure_type: str):
         """Сохраняет диагностическую информацию при критических сбоях"""
         try:
@@ -567,68 +569,15 @@ class ThumbTackBot:
                 break
 
 
-    async def _threads(self):
-        # Проверяем состояние страницы перед поиском тредов
-        try:
-            # Проверяем, что мы на правильной странице
-            if "/pro-inbox/" not in self.page.url:
-                return self.page.locator("a[href^='/pro-inbox/messages/']")  # Возвращаем пустой locator
-            
-            # Проверяем, что React загрузился
-            app_root = await self.page.evaluate("document.querySelector('#app-page-root')?.childElementCount || 0")
-            
-            if app_root == 0:
-                await self.page.wait_for_function(
-                    "document.querySelector('#app-page-root').childElementCount > 0",
-                    timeout=10000
-                )
-            
-        except Exception:
-            pass
+    async def get_first_thread_url_from_html(self) -> Optional[str]:
+        """Извлекает URL первого треда напрямую из HTML"""
+        html = await self.page.content()
         
-        # Список селекторов для поиска тредов (от наиболее специфичных к менее)
-        selectors = [
-            "a[href^='/pro-inbox/messages/']",  # Основной селектор
-            "a[href*='/pro-inbox/messages/']",  # Более широкий поиск
-            "main a[href*='messages']",         # Любые ссылки в main
-            "[data-testid*='message'] a",       # По data-testid
-            "[data-testid*='thread'] a",        # Альтернативный data-testid
-            "a[href*='messages']",              # Еще более широкий поиск
-            ".message-item a",                  # По классу
-            "[role='listitem'] a",              # По роли
-            "div[class*='message'] a",          # По классу div
-        ]
+        # Ищем все ссылки на сообщения
+        pattern = re.compile(r'href="(/pro-inbox/messages/\d+)"')
+        matches = pattern.findall(html)
         
-        locator = None
-        count = 0
-        
-        for i, selector in enumerate(selectors):
-            try:
-                test_locator = self.page.locator(selector)
-                test_count = await test_locator.count()
-                
-                if test_count > 0:
-                    locator = test_locator
-                    count = test_count
-                    break
-                    
-            except Exception:
-                continue
-        
-        # Если ничего не нашли, пробуем еще более агрессивные методы
-        if count == 0:
-            # Ищем ссылки, содержащие 'messages' в href
-            message_links = self.page.locator("a[href*='messages']")
-            message_count = await message_links.count()
-            
-            if message_count > 0:
-                locator = message_links
-                count = message_count
-        
-        # Дополнительная диагностика
-        if count == 0:
-            await self._run_diagnostics("no_threads_found")
-        return locator
+        return matches[0] if matches else None
 
 
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
@@ -639,62 +588,39 @@ class ThumbTackBot:
         """
         
         import re
+        # Ищем tel: ссылки с номером телефона в формате +1234567890 (только цифры)
         pattern = re.compile(r'href="tel:(\+\d+)"')
         html = await self.page.content()
         match = pattern.search(html)
         if match:
             phone_number = match.group(1)
-            print("Найден номер:", phone_number)
+            logger.info(f"DEBUG: Found phone number: {phone_number}")
             return phone_number
         else:
-            print("Телефон не найден")
+            logger.warning("DEBUG: Phone number not found")
             return None
 
 
-    async def extract_phones_from_all_threads(self, store=None) -> List[Dict[str, Any]]:
-        """Упрощенная версия - извлекает телефон только из первого треда"""
-        try:
-            # Открываем сообщения
-            await self.open_messages()
-            
-            # Получаем первый тред
-            threads = await self._threads()
-            if await threads.count() == 0:
-                return []
-            
-            # Берем первый тред
-            first_thread = threads.nth(0)
-            href = await first_thread.get_attribute("href") or ""
-            lead_key = self.lead_key_from_url(href)
-            
-            # Проверяем анти-спам
-            if store and store.should_skip_thread(href):
-                return [{
-                    "href": href,
-                    "lead_key": lead_key,
-                    "phone": store.phone_for_thread(href),
-                    "status": "skipped_already_seen",
-                    "variables": {"lead_id": lead_key, "lead_url": f"https://www.thumbtack.com{href}", "source": "thumbtack"}
-                }]
-            
-            # Кликаем на первый тред
-            await first_thread.click(force=True)
-            
-            # Извлекаем телефон (без ожидания - HTML уже загружен)
-            phone = await self._show_and_extract_in_current_thread()
-            
-            # Сохраняем в store
-            if store:
-                store.mark_thread_seen(href, phone)
-            
-            return [{
-                "href": href,
-                "lead_key": lead_key,
-                "phone": phone,
-                "status": "processed",
-                "variables": {"lead_id": lead_key, "lead_url": f"https://www.thumbtack.com{href}", "source": "thumbtack"}
-            }]
-            
-        except Exception as e:
-            logger.error(f"Error extracting phone from first thread: {e}")
-            return []
+    async def extract_phone(self) -> Optional[str]:
+        """Извлекает телефон из первого треда (интерфейс для runner'а)"""
+        # Открываем inbox
+        await self.open_messages()
+        
+        # Получаем URL первого треда напрямую из HTML
+        first_thread_url = await self.get_first_thread_url_from_html()
+        logger.info(f"DEBUG: First thread URL: {first_thread_url}")
+        
+        if not first_thread_url:
+            logger.warning("DEBUG: No first thread URL found")
+            return None
+        
+        # Переходим на страницу треда
+        await self.page.goto(f"https://www.thumbtack.com{first_thread_url}")
+        logger.info(f"DEBUG: Successfully loaded thread page, final URL: {self.page.url}")
+        
+        # Небольшая пауза для загрузки правой панели
+        await self.page.wait_for_timeout(500)
+        
+        # Извлекаем и возвращаем телефон
+        phone = await self._show_and_extract_in_current_thread()
+        return phone

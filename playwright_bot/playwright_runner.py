@@ -89,33 +89,6 @@ class LeadRunner:
         logger.info("LeadRunner closed")
 
 
-    async def _extract_phone_for_lead(self, lead: Dict[str, Any], phones_data: Optional[List[Dict]] = None) -> Optional[str]:
-        lead_id = lead.get("lead_id", "")
-        if phones_data is None:
-            rows = await self.bot.extract_phones_from_all_threads(store=None)
-        else:
-            rows = phones_data
-        
-        # Сначала пытаемся найти телефон для конкретного лида
-        for row in rows or []:
-            thread_href = row.get("href", "")
-            thread_lead_id = thread_href.replace("/pro-inbox/messages/", "") if thread_href.startswith("/pro-inbox/messages/") else ""
-            
-            if (str(thread_lead_id) == str(lead_id)) and row.get("phone"):
-                phone = str(row["phone"]).strip()
-                return phone
-        
-        # Если не нашли для конкретного лида, возвращаем любой найденный телефон
-        for row in rows or []:
-            if row.get("phone"):
-                phone = str(row["phone"]).strip()
-                return phone
-
-        # Если вообще никакого телефона не найдено, возвращаем None
-        logger.warning(f"[_extract_phone_for_lead] No phone found for lead {lead_id}, returning None")
-        return None
-
-
     async def process_lead(self, lead: Dict[str, Any]) -> Dict[str, Any]:
         """
         Обработка ОДНОГО лида:
@@ -139,30 +112,27 @@ class LeadRunner:
             logger.info("LeadRunner: processing lead %s, URL: %s", lk, self.page.url)
             
             # Шаг 1: Открываем страницу лидов
-            await self.bot.open_leads()
-            logger.info("LeadRunner: opened /leads, URL: %s", self.page.url)
+            # await self.bot.open_leads()
+            # logger.info("LeadRunner: opened /leads, URL: %s", self.page.url)
             
-            # Шаг 2: Открываем детали лида
-            logger.info("LeadRunner: lead data: %s", lead)
-            await self.bot.open_lead_details(lead)
-            logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
+            # # Шаг 2: Открываем детали лида
+            # logger.info("LeadRunner: lead data: %s", lead)
+            # await self.bot.open_lead_details(lead)
+            # logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
             
-            # Шаг 2.5: Извлекаем полное имя со страницы деталей
-            full_name = await self.bot.extract_full_name_from_details()
-            if full_name and full_name != lead.get('name', ''):
-                logger.info("LeadRunner: extracted full name: %s (original: %s)", full_name, lead.get('name', ''))
-                lead['name'] = full_name  # Обновляем имя в данных лида
+            # # Шаг 2.5: Извлекаем полное имя со страницы деталей
+            # full_name = await self.bot.extract_full_name_from_details()
+            # if full_name and full_name != lead.get('name', ''):
+            #     logger.info("LeadRunner: extracted full name: %s (original: %s)", full_name, lead.get('name', ''))
+            #     lead['name'] = full_name  # Обновляем имя в данных лида
             
-            # Шаг 3: Отправляем шаблонное сообщение
-            await self.bot.send_template_message(dry_run=False)
-            logger.info("LeadRunner: sent template message (dry_run=False)")
+            # # Шаг 3: Отправляем шаблонное сообщение
+            # await self.bot.send_template_message(dry_run=False)
+            # logger.info("LeadRunner: sent template message (dry_run=False)")
             
-            # Шаг 4: Извлекаем телефон (после отправки сообщения)
-            logger.info("LeadRunner: waiting 3 seconds before extracting phone...")
-            await asyncio.sleep(3)  # Даем время на синхронизацию
-            
-            logger.info("LeadRunner: starting phone extraction for %s", lk)
-            phone = await self._extract_phone_for_lead(lead)
+            # logger.info("LeadRunner: starting phone extraction for %s", lk)
+            # Извлекаем телефон из первого треда
+            phone = await self.bot.extract_phone()
             if phone:
                 self.flow.mark(lk, "phone_found")
                 logger.info("LeadRunner: phone found for %s: %s", lk, phone)
