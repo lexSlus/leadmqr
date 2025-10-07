@@ -6,7 +6,6 @@ import uuid
 from typing import Any, Dict, List, Optional
 from playwright.async_api import async_playwright
 from playwright_bot.config import SETTINGS
-from playwright_bot.state_store import StateStore
 from playwright_bot.thumbtack_bot import ThumbTackBot
 from playwright_bot.utils import unique_user_data_dir, FlowTimer
 
@@ -112,25 +111,25 @@ class LeadRunner:
             logger.info("LeadRunner: processing lead %s, URL: %s", lk, self.page.url)
             
             # Шаг 1: Открываем страницу лидов
-            # await self.bot.open_leads()
-            # logger.info("LeadRunner: opened /leads, URL: %s", self.page.url)
+            await self.bot.open_leads()
+            logger.info("LeadRunner: opened /leads, URL: %s", self.page.url)
             
             # # Шаг 2: Открываем детали лида
-            # logger.info("LeadRunner: lead data: %s", lead)
-            # await self.bot.open_lead_details(lead)
-            # logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
+            logger.info("LeadRunner: lead data: %s", lead)
+            await self.bot.open_lead_details(lead)
+            logger.info("LeadRunner: opened lead details, URL: %s", self.page.url)
             
             # # Шаг 2.5: Извлекаем полное имя со страницы деталей
-            # full_name = await self.bot.extract_full_name_from_details()
-            # if full_name and full_name != lead.get('name', ''):
-            #     logger.info("LeadRunner: extracted full name: %s (original: %s)", full_name, lead.get('name', ''))
-            #     lead['name'] = full_name  # Обновляем имя в данных лида
+            full_name = await self.bot.extract_full_name_from_details()
+            if full_name and full_name != lead.get('name', ''):
+                logger.info("LeadRunner: extracted full name: %s (original: %s)", full_name, lead.get('name', ''))
+                lead['name'] = full_name  # Обновляем имя в данных лида
             
             # # Шаг 3: Отправляем шаблонное сообщение
-            # await self.bot.send_template_message(dry_run=False)
-            # logger.info("LeadRunner: sent template message (dry_run=False)")
+            await self.bot.send_template_message(dry_run=True)
+            logger.info("LeadRunner: sent template message (dry_run=True)")
             
-            # logger.info("LeadRunner: starting phone extraction for %s", lk)
+            logger.info("LeadRunner: starting phone extraction for %s", lk)
             # Извлекаем телефон из первого треда
             phone = await self.bot.extract_phone()
             if phone:

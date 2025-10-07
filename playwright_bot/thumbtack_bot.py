@@ -289,14 +289,14 @@ class ThumbTackBot:
         await self.page.wait_for_load_state("domcontentloaded", timeout=5000)
         logger.info("ThumbTackBot: page loaded, starting message sending process")
         
-        # Ожидание загрузки React с retry логикой (как в open_messages)
-        max_retries = 3
+        # Ожидание загрузки React с retry логикой (оптимизированное)
+        max_retries = 2  # Уменьшили с 3 до 2
         for attempt in range(max_retries):
             try:
                 # Ждем, пока корневой div (#app-page-root) наполнится контентом
                 await self.page.wait_for_function(
                     "document.querySelector('#app-page-root')?.childElementCount > 0",
-                    timeout=30000
+                    timeout=20000  # Увеличили до 20000ms для стабильности
                 )
                 logger.info(f"ThumbTackBot: React loaded successfully (attempt {attempt + 1})")
                 break  # Успешно загрузилось, выходим из цикла
@@ -305,16 +305,16 @@ class ThumbTackBot:
                 if attempt < max_retries - 1:
                     logger.warning(f"ThumbTackBot: React load attempt {attempt + 1} failed: {e}, retrying...")
                     # Делаем refresh и ждем
-                    await self.page.reload(wait_until="domcontentloaded", timeout=30000)
-                    await self.page.wait_for_timeout(2000)
+                    await self.page.reload(wait_until="domcontentloaded", timeout=15000)
+                    await self.page.wait_for_timeout(1000)  # Уменьшили с 2000 до 1000
                 else:
                     logger.error(f"ThumbTackBot: React failed to load after {max_retries} attempts: {e}")
                     # Сохраняем диагностику
                     await self._run_diagnostics("react_load_failure_lead_page")
         
-        # Дополнительное ожидание для стабильности
-        await self.page.wait_for_timeout(2000)
-        logger.info("ThumbTackBot: additional 2s wait completed")
+        # Дополнительное ожидание для стабильности (оптимизировано)
+        await self.page.wait_for_timeout(500)  # Уменьшили с 2000ms до 500ms
+        logger.info("ThumbTackBot: additional 0.5s wait completed")
         
         # Проверяем и закрываем модальные окна
         try:
@@ -382,21 +382,16 @@ class ThumbTackBot:
         if box_count == 0:
             logger.info("ThumbTackBot: no textarea found, looking for Reply button")
             
-            # Дополнительное ожидание для появления кнопок (как в open_messages)
+            # Дополнительное ожидание для появления кнопок (оптимизированное)
             try:
                 # Ждем появления хотя бы одной кнопки на странице
-                await ctx.locator("button").first.wait_for(timeout=10000)
+                await ctx.locator("button").first.wait_for(timeout=3000)
             except Exception:
                 pass
             
-            # Ищем кнопку Reply разными способами
+            # Ищем кнопку Reply (оптимизированно - только рабочий селектор)
             candidates = [
                 ctx.get_by_role("button", name=RE_REPLY),
-                ctx.locator("button:has-text('Reply')"),
-                ctx.locator("button").filter(has_text=re.compile(r"\breply\b", re.I)),
-                # Новые селекторы по CSS классам
-                ctx.locator("button._1iRY-9hq7N_ErfzJ6CdfXn:has(span:has-text('Reply'))"),
-                ctx.locator("button:has(span._2CV_W3BKnouk-HUw1DACuL:has-text('Reply'))"),
             ]
             reply_btn = None
             for i, loc in enumerate(candidates):
@@ -406,10 +401,10 @@ class ThumbTackBot:
                         continue
                     btn = loc.first
                     # Сначала дождёмся, что элемент прикреплён
-                    await btn.wait_for(state="attached", timeout=3_000)
+                    await btn.wait_for(state="attached", timeout=2_000)
                     # затем сделаем его видимым/прокрутим
                     try:
-                        await btn.wait_for(state="visible", timeout=3_000)
+                        await btn.wait_for(state="visible", timeout=2_000)
                     except Exception:
                         pass
                     await btn.scroll_into_view_if_needed()
@@ -420,10 +415,10 @@ class ThumbTackBot:
 
             if reply_btn:
                 try:
-                    await reply_btn.click(timeout=3_000)
+                    await reply_btn.click(timeout=2_000)
                 except Exception:
                     try:
-                        await reply_btn.click(timeout=2_000, force=True)
+                        await reply_btn.click(timeout=1_000, force=True)
                     except Exception:
                         pass
 
@@ -444,24 +439,32 @@ class ThumbTackBot:
         await box.first.fill(text)
 
         # Ищем кнопку Send
+        logger.info("ThumbTackBot: Looking for Send button")
         send_btn = ctx.get_by_role("button", name=RE_SEND)
         send_count = await send_btn.count()
+        logger.info(f"ThumbTackBot: Send button (role) found {send_count} elements")
         
         if send_count == 0:
             send_btn = ctx.locator("button:has-text(/^\\s*Send\\s*$/i)")
             send_count = await send_btn.count()
+            logger.info(f"ThumbTackBot: Send button (has-text) found {send_count} elements")
             
         if send_count == 0:
             # Новые селекторы по CSS классам для Send
             send_btn = ctx.locator("button._1iRY-9hq7N_ErfzJ6CdfXn:has(span:has-text('Send'))")
             send_count = await send_btn.count()
+            logger.info(f"ThumbTackBot: Send button (css_class_1) found {send_count} elements")
             
         if send_count == 0:
             send_btn = ctx.locator("button:has(span._2CV_W3BKnouk-HUw1DACuL:has-text('Send'))")
             send_count = await send_btn.count()
+            logger.info(f"ThumbTackBot: Send button (css_class_2) found {send_count} elements")
             
         if send_count == 0:
+            logger.info("ThumbTackBot: No Send button found, returning")
             return
+        else:
+            logger.info(f"ThumbTackBot: Send button found with {send_count} elements")
         
         # Проверяем dry_run режим
         if dry_run:
@@ -482,52 +485,16 @@ class ThumbTackBot:
 
 
     async def open_messages(self):
-        # Проверяем, не находимся ли мы уже на странице сообщений
-        current_url = self.page.url
-        if "/pro-inbox/" in current_url:
-            # Проверяем, загружен ли контент на текущей странице
-            try:
-                threads_container = self.page.locator("a[href^='/pro-inbox/messages/']")
-                count = await threads_container.count()
-                if count > 0:
-                    return
-                else:
-                    await self.page.reload(wait_until="domcontentloaded", timeout=15000)
-            except Exception:
-                pass
+        # Переходим на страницу inbox
+        await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", timeout=10000)
         
-        # Переходим на страницу
-        await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=15000)
-        
-        # Логинимся, если нужно, и снова переходим на страницу
+        # Логинимся если нужно
         if "login" in self.page.url.lower():
             await self.login_if_needed()
-            await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", wait_until="domcontentloaded", timeout=15000)
+            await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", timeout=10000)
         
-        # Ожидание загрузки React с retry логикой
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Ждем, пока корневой div (#app-page-root) наполнится контентом
-                await self.page.wait_for_function(
-                    "document.querySelector('#app-page-root').childElementCount > 0",
-                    timeout=90000
-                )
-
-                # Ждем появления первого элемента в списке сообщений
-                threads_container = self.page.locator("a[href^='/pro-inbox/messages/']")
-                await threads_container.first.wait_for(timeout=15000)
-                break  # Успешно загрузилось, выходим из цикла
-
-            except PWTimeoutError:
-                if attempt < max_retries - 1:
-                    # Делаем refresh и ждем
-                    await self.page.reload(wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(5)  # Даем время на загрузку
-                else:
-                    # Все попытки исчерпаны
-                    await self._run_diagnostics("react_load_failure")
-                    raise Exception("Could not load the messages page content after all retries. Aborting.")
+        # Ждем появления тредов (это значит что страница готова)
+        await self.page.wait_for_selector("a[href^='/pro-inbox/messages/']", timeout=20000)  # Увеличили до 20000ms
     
     
     
@@ -588,6 +555,9 @@ class ThumbTackBot:
         """
         
         import re
+        # Небольшая пауза для загрузки телефона
+        await self.page.wait_for_timeout(1000)
+        
         # Ищем tel: ссылки с номером телефона в формате +1234567890 (только цифры)
         pattern = re.compile(r'href="tel:(\+\d+)"')
         html = await self.page.content()

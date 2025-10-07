@@ -123,9 +123,7 @@ services:
     networks: [ leadmqr_net ]
     volumes:
       - .:/app
-      - state_data:/app/.data
       - ./pw_profiles:/app/pw_profiles:rw
-      - ./debug:/app/debug
     command: [ "xvfb-run", "-a", "python", "manage.py", "start_lead_runner" ]
     healthcheck:
       # healthcheck на Python: проверяем heartbeat-ключ в Redis
@@ -161,9 +159,7 @@ services:
     networks: [ leadmqr_net ]
     volumes:
       - .:/app
-      - state_data:/app/.data
       - ./pw_profiles:/app/pw_profiles:rw
-      - ./debug:/app/debug
     command: xvfb-run -a celery -A leadmqr worker -Q lead_proc -l INFO --pool=solo -n lead_proc@%h
 
   celery_worker_ai:
@@ -183,29 +179,8 @@ services:
     networks: [ leadmqr_net ]
     volumes:
       - .:/app
-      - state_data:/app/.data
-      - ./debug:/app/debug
     entrypoint: []
-    command: [ "celery", "-A", "leadmqr", "worker", "-Q", "ai_calls,telegram", "-l", "INFO", "-c", "4", "-n", "ai_calls@%h" ]
-
-  telegram_bot:
-    build:
-      context: .
-      dockerfile: Dockerfile.base
-      args:
-        BUILD_DATE: ${BUILD_DATE:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}
-    container_name: leadmqr_telegram_bot
-    restart: unless-stopped
-    volumes:
-      - .:/app
-    env_file: [ .env ]
-    environment:
-      - DJANGO_SETTINGS_MODULE=leadmqr.settings
-    depends_on:
-      db:
-        condition: service_healthy
-    networks: [ leadmqr_net ]
-    command: python get_chat_id.py
+    command: [ "celery", "-A", "leadmqr", "worker", "-Q", "ai_calls", "-l", "INFO", "-c", "4", "-n", "ai_calls@%h" ]
 
 networks:
   leadmqr_net:
@@ -215,6 +190,3 @@ volumes:
   postgres_data:
   redis_data:
   rabbitmq_data:
-  state_data:
-  playwright_cache:
-  playwright_profile:

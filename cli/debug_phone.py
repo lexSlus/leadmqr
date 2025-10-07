@@ -23,7 +23,7 @@ django.setup()
 
 from playwright_bot.config import SETTINGS
 from playwright_bot.thumbtack_bot import ThumbTackBot
-from telegram_app.services import TelegramService
+# from telegram_app.services import TelegramService  # Удалено - не используется
 
 # Настройка логирования
 logging.basicConfig(

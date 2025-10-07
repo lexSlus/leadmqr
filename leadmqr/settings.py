@@ -47,7 +47,6 @@ INSTALLED_APPS = [
     'leads',
     'django_celery_beat',
     'ai_calls',
-    'telegram_app',
     'rest_framework',
 
 ]
@@ -162,15 +161,6 @@ CELERY_TASK_ROUTES = {
     'leads.tasks.poll_leads': {'queue': 'crawler'},
     'leads.tasks.process_lead_task': {'queue': 'lead_proc'},
     'ai_calls.tasks.*': {'queue': 'ai_calls'},
-    'telegram_app.tasks.*': {'queue': 'telegram'},
-}
-CELERY_BEAT_SCHEDULE = {
-    # В продвинутой архитектуре poll_leads не нужен,
-    # так как LeadProducer работает в Docker контейнере
-    # "poll-leads-every-2min": {
-    #     "task": "leads.tasks.poll_leads",
-    #     "schedule": 120.0,  # 2 минуты
-    # },
 }
 
 CACHES = {
@@ -213,3 +203,8 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 TELEGRAM_ENABLED = True
 
+# jobber
+JOBBER_CLIENT_ID = '4e93a362-308b-4fe3-9b4c-50365d2f65ea'
+JOBBER_CLIENT_SECRET = '725312616bc0f58e4973f6b1ad6cd9e06af16d773c7d82f5fd59a10f6e249e62'
+
+JOBBER_TOKEN_URL = "https://api.getjobber.com/api/oauth/token"
