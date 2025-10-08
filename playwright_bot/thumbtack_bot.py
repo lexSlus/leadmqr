@@ -296,7 +296,7 @@ class ThumbTackBot:
                 # Ждем, пока корневой div (#app-page-root) наполнится контентом
                 await self.page.wait_for_function(
                     "document.querySelector('#app-page-root')?.childElementCount > 0",
-                    timeout=20000  # Увеличили до 20000ms для стабильности
+                    timeout=25000  # Увеличили до 25000ms для стабильности
                 )
                 logger.info(f"ThumbTackBot: React loaded successfully (attempt {attempt + 1})")
                 break  # Успешно загрузилось, выходим из цикла
