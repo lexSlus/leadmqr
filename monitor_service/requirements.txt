@@ -1,0 +1,12 @@
+# requirements.txt
+celery
+playwright
+python-dotenv
+# Для работы с БД
+sqlalchemy>=2.0.0
+asyncpg
+alembic
+psycopg2-binary
+pydantic
+pydantic[email]
+

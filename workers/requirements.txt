@@ -1,0 +1,7 @@
+# requirements.txt
+celery[gevent]
+gevent
+websocket-client
+python-dotenv
+requests
+

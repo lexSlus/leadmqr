@@ -1,75 +1,73 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-.coverage
-.pytest_cache/
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Django
-db.sqlite3
-celerybeat-schedule
-*.log
-
-# System files
-.DS_Store
-
-# Environment
-.env
-.env.local
-.env.production
-
-# Browser profiles (Playwright/Chrome)
-pw_profiles/
-pw_profiles_runner/
-playwright_bot/pw_profiles/
-cli/pw_profiles/
-playwright_bot/.data/
-tt_profile/
-
-# Browser cache and temp files
-**/Code Cache/
-**/Cache/
-**/GPUCache/
-**/Service Worker/
-**/Local Storage/
-**/IndexedDB/
-**/WebStorage/
-**/GrShaderCache/
-**/ShaderCache/
-**/GraphiteDawnCache/
-**/BrowserMetrics-spare*
-**/ChromeFeatureState*
-**/component_crx_cache/
-**/extensions_crx_cache/
-**/first_party_sets*
-**/Last Version*
-**/Local State*
-**/NativeMessagingHosts/
-**/Safe Browsing/
-**/segmentation_platform/
-**/Singleton*
-**/Variations/
-**/Dictionaries/
-
-# Debug and temp files
-debug/
-*.tmp
-*.temp
-*.old
-*.log
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
 # Docker
-.dockerignore
+*.pid
+*.seed
+*.pid.lock
+
+# Playwright
+pw_profiles/
+playwright-report/
+test-results/
+
+# Browser Service
+browser_service/.data/
+browser_service/debug/
+*.json
+!requirements.txt
+!package.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# State files
+*.state.json
+.taat_state.json
+

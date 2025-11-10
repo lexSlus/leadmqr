@@ -1,0 +1,43 @@
+# docker-compose.yml для browser_service (VNC версия для отладки)
+version: '3.8'
+
+services:
+  browser_service:
+    build:
+      context: ..
+      dockerfile: browser_service/Dockerfile
+      args:
+        BUILD_MODE: vnc
+    container_name: browser_service
+    restart: unless-stopped
+    shm_size: "1gb" # Playwright это любит
+    ports:
+      # API-порт
+      - "8080:8080"
+      # VNC порты (для отладки)
+      - "5900:5900" # VNC сервер
+      - "6080:6080" # noVNC веб-интерфейс
+    environment:
+      # Папка для сессий (общая с monitor_service)
+      - SESSIONS_DIR=/sessions
+    volumes:
+      # Общий том для сессий (используется также monitor_service)
+      - thumbtack_sessions:/sessions
+    networks:
+      - thumbtack_network
+    # Команда запуска для VNC режима (использует start_with_vnc.sh)
+    command: ["/start_with_vnc.sh"]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  thumbtack_network:
+    external: true
+
+volumes:
+  thumbtack_sessions:
+    external: true
+

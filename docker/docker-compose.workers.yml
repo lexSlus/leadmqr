@@ -1,0 +1,66 @@
+# docker-compose.yml для workers
+version: '3.8'
+
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: workers/Dockerfile
+    container_name: celery_worker
+    restart: unless-stopped
+    dns:
+      - 10.64.0.1
+      - 1.1.1.1
+    environment:
+      # RabbitMQ из monitor_service compose (используем общую сеть)
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+      # Browser Service (из browser_service compose)
+      - FACTORY_WS_URL=ws://browser_service:8080/api/ws
+      - CELERY_WORKER_POOL=gevent
+      - CELERY_WORKER_CONCURRENCY=50
+      - CELERY_QUEUE_NAME=new_leads
+    volumes:
+      # Монтируем .env файл из корня проекта
+      - ../.env:/app/.env:ro
+    working_dir: /app/workers
+    networks:
+      - thumbtack_network
+    # Команда запуска для workers
+    command: [ "celery", "-A", "celery_app", "worker", "--pool=gevent", "--concurrency=50", "--queues=new_leads", "--loglevel=info" ]
+    # НЕ указываем depends_on для внешних сервисов (rabbitmq, browser_service)
+    # Они в другой compose, просто ждем что они запущены
+
+  beat:
+    build:
+      context: ..
+      dockerfile: workers/Dockerfile
+    container_name: celery_beat
+    restart: unless-stopped
+    dns:
+      - 10.64.0.1
+      - 1.1.1.1
+    environment:
+      # RabbitMQ из monitor_service compose (используем общую сеть)
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+      - CELERY_QUEUE_NAME=new_leads
+    volumes:
+      # Монтируем .env файл из корня проекта
+      - ../.env:/app/.env:ro
+      # Persist beat schedule database (монтируем в подкаталог, чтобы не перезаписывать код)
+      - celery_beat_data:/app/workers/.beat
+    working_dir: /app/workers
+    networks:
+      - thumbtack_network
+    # Команда запуска для Celery Beat (периодические задачи)
+    # Используем кастомный путь для schedule файла в volume (.beat/celerybeat-schedule)
+    command: [ "celery", "-A", "celery_app", "beat", "--schedule=.beat/celerybeat-schedule", "--loglevel=info" ]
+
+volumes:
+  celery_beat_data:
+
+
+networks:
+  thumbtack_network:
+    external: true

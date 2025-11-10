@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import re
 
 logger = logging.getLogger("playwright_bot")
 
@@ -20,8 +21,11 @@ MSG_PLACEHOLDER = "Answer any questions and let them know next steps."
 
 
 class ThumbTackBot:
-    def __init__(self, page):
+    def __init__(self, page, email: Optional[str] = None, password: Optional[str] = None):
         self.page = page
+        # Используем переданные credentials или fallback на SETTINGS (для обратной совместимости)
+        self.email = email or SETTINGS.email
+        self.password = password or SETTINGS.password
 
     async def page_is_ok(self) -> bool:
         try:
@@ -46,8 +50,8 @@ class ThumbTackBot:
         if all(n == 0 for n in counts):
             return False
 
-        if not SETTINGS.email or not SETTINGS.password:
-            raise RuntimeError("No credentials provided TT_EMAIL and TT_PASSWORD")
+        if not self.email or not self.password:
+            raise RuntimeError("No credentials provided. Pass email and password to ThumbTackBot or set TT_EMAIL and TT_PASSWORD")
 
         # Кликаем только по одной кнопке входа (не по ссылке Log in)
         for c in login_candidates:
@@ -72,7 +76,7 @@ class ThumbTackBot:
             try:
                 # Сначала быстро проверим, есть ли элемент
                 if await self.page.locator(selector).count() > 0:
-                    await self.page.fill(selector, SETTINGS.email, timeout=2000)
+                    await self.page.fill(selector, self.email, timeout=2000)
                     email_filled = True
                     logger.info(f" Email заполнен через селектор: {selector}")
                     break
@@ -89,7 +93,7 @@ class ThumbTackBot:
             try:
                 # Сначала быстро проверим, есть ли элемент
                 if await self.page.locator(selector).count() > 0:
-                    await self.page.fill(selector, SETTINGS.password, timeout=2000)
+                    await self.page.fill(selector, self.password, timeout=2000)
                     password_filled = True
                     logger.info(f" Password заполнен через селектор: {selector}")
                     break
@@ -155,32 +159,38 @@ class ThumbTackBot:
         ✔️ ИЗМЕНЕНО: Надежно находит новые лиды, используя явное ожидание
         появления карточек вместо ожидания состояния сети.
         """
+        import time
+        start_time = time.time()
         results: List[Dict] = []
         ctx = self.page # По умолчанию работаем с основной страницей
         
         # Попытка найти активный фрейм, если он есть
+        frame_start = time.time()
         for fr in self.page.frames:
             if "thumbtack.com" in fr.url and fr is not self.page:
                 ctx = fr
                 break
+        logger.info(f"[list_new_leads] Frame search took: {time.time() - frame_start:.2f} сек")
 
         # Определяем локатор для карточек с лидами
+        locator_start = time.time()
         anchors = ctx.locator("a[href^='/pro-leads/']")
         view_text = re.compile(r"view\s*details", re.I)
         cards = anchors.filter(has=ctx.get_by_text(view_text))
+        logger.info(f"[list_new_leads] Locator creation took: {time.time() - locator_start:.2f} сек")
 
         try:
-            # ГЛАВНОЕ ИЗМЕНЕНИЕ: Терпеливо ждем появления первой карточки.
-            # Даем ей до 20 секунд, чтобы React успел все загрузить и отрисовать.
-            await cards.first.wait_for(state="visible", timeout=20000)
-            logger.info("[list_new_leads] Lead cards are visible. Proceeding with extraction.")
-        except PWTimeoutError:
-            # Если за 20 секунд ничего не появилось, значит, новых лидов действительно нет.
-            logger.info("[list_new_leads] No lead cards found within the timeout. Assuming no new leads.")
-            print("[leads] found: 0")
+            # Ждем появления первой карточки (страница уже загружена через domcontentloaded, поэтому достаточно 5 сек)
+            wait_start = time.time()
+            await cards.first.wait_for(state="visible", timeout=2000)
+            logger.info(f"[list_new_leads] Lead cards are visible. Wait took: {time.time() - wait_start:.2f} сек")
+        except Exception as e:
+            # Если за 2 секунды ничего не появилось, значит, новых лидов действительно нет.
+            wait_time = time.time() - wait_start
+            logger.info(f"[list_new_leads] No lead cards found within the timeout: {e}. Wait took: {wait_time:.2f} сек. Total time so far: {time.time() - start_time:.2f} сек")
             return results
 
-        # Если мы дошли досюда, карточки точно есть на странице.
+        # Если мы дошли до сюда, карточки точно есть на странице.
         count = await cards.count()
 
         for i in range(count):
@@ -210,9 +220,9 @@ class ThumbTackBot:
             }
             results.append(item)
 
-        print(f"[leads] found: {len(results)}")
+        logger.info(f"[list_new_leads] Extracted {len(results)} leads from the page")
         for r in results:
-            print(f"[lead] {r['href']} | {r.get('name', '')} | {r.get('category', '')} | {r.get('location', '')}")
+            logger.debug(f"[list_new_leads] Lead: {r['href']} | {r.get('name', '')} | {r.get('category', '')} | {r.get('location', '')}")
 
         return results
 
@@ -296,7 +306,7 @@ class ThumbTackBot:
                 # Ждем, пока корневой div (#app-page-root) наполнится контентом
                 await self.page.wait_for_function(
                     "document.querySelector('#app-page-root')?.childElementCount > 0",
-                    timeout=25000  # Увеличили до 25000ms для стабильности
+                    timeout=10000  # Уменьшили с 25000 до 10000ms для оптимизации
                 )
                 logger.info(f"ThumbTackBot: React loaded successfully (attempt {attempt + 1})")
                 break  # Успешно загрузилось, выходим из цикла
@@ -305,16 +315,16 @@ class ThumbTackBot:
                 if attempt < max_retries - 1:
                     logger.warning(f"ThumbTackBot: React load attempt {attempt + 1} failed: {e}, retrying...")
                     # Делаем refresh и ждем
-                    await self.page.reload(wait_until="domcontentloaded", timeout=15000)
-                    await self.page.wait_for_timeout(1000)  # Уменьшили с 2000 до 1000
+                    await self.page.reload(wait_until="domcontentloaded", timeout=8000)  # Уменьшили с 15000 до 8000
+                    await self.page.wait_for_timeout(500)  # Уменьшили с 1000 до 500
                 else:
                     logger.error(f"ThumbTackBot: React failed to load after {max_retries} attempts: {e}")
                     # Сохраняем диагностику
                     await self._run_diagnostics("react_load_failure_lead_page")
         
         # Дополнительное ожидание для стабильности (оптимизировано)
-        await self.page.wait_for_timeout(500)  # Уменьшили с 2000ms до 500ms
-        logger.info("ThumbTackBot: additional 0.5s wait completed")
+        await self.page.wait_for_timeout(300)  # Уменьшили с 500ms до 300ms
+        logger.info("ThumbTackBot: additional 0.3s wait completed")
         
         # Проверяем и закрываем модальные окна
         try:
@@ -326,7 +336,7 @@ class ThumbTackBot:
                         close_btn = self.page.locator("[data-test*='modal'], [role='dialog'] button, .modal button").nth(i)
                         if await close_btn.is_visible():
                             await close_btn.click()
-                            await self.page.wait_for_timeout(500)
+                            await self.page.wait_for_timeout(300)  # Уменьшили с 500 до 300
                     except Exception:
                         pass
         except Exception:
@@ -350,7 +360,7 @@ class ThumbTackBot:
                     arrow_found = True
                     await arrow.first.scroll_into_view_if_needed()
                     await arrow.first.click()
-                    await self.page.wait_for_timeout(500)  # Сократили время ожидания после клика
+                    await self.page.wait_for_timeout(300)  # Уменьшили с 500 до 300
                     break
             
             if not arrow_found:
@@ -385,7 +395,7 @@ class ThumbTackBot:
             # Дополнительное ожидание для появления кнопок (оптимизированное)
             try:
                 # Ждем появления хотя бы одной кнопки на странице
-                await ctx.locator("button").first.wait_for(timeout=3000)
+                await ctx.locator("button").first.wait_for(timeout=2000)  # Уменьшили с 3000 до 2000
             except Exception:
                 pass
             
@@ -401,10 +411,10 @@ class ThumbTackBot:
                         continue
                     btn = loc.first
                     # Сначала дождёмся, что элемент прикреплён
-                    await btn.wait_for(state="attached", timeout=2_000)
+                    await btn.wait_for(state="attached", timeout=1_500)  # Уменьшили с 2000 до 1500
                     # затем сделаем его видимым/прокрутим
                     try:
-                        await btn.wait_for(state="visible", timeout=2_000)
+                        await btn.wait_for(state="visible", timeout=1_500)  # Уменьшили с 2000 до 1500
                     except Exception:
                         pass
                     await btn.scroll_into_view_if_needed()
@@ -415,10 +425,10 @@ class ThumbTackBot:
 
             if reply_btn:
                 try:
-                    await reply_btn.click(timeout=2_000)
+                    await reply_btn.click(timeout=1_500)  # Уменьшили с 2000 до 1500
                 except Exception:
                     try:
-                        await reply_btn.click(timeout=1_000, force=True)
+                        await reply_btn.click(timeout=800, force=True)  # Уменьшили с 1000 до 800
                     except Exception:
                         pass
 
@@ -432,7 +442,7 @@ class ThumbTackBot:
 
         # теперь работаем с textarea, если она есть
         try:
-            await box.first.wait_for(state="visible", timeout=5_000)
+            await box.first.wait_for(state="visible", timeout=3_000)  # Уменьшили с 5000 до 3000
         except Exception:
             return
 
@@ -471,11 +481,11 @@ class ThumbTackBot:
             return
             
         try:
-            await send_btn.first.wait_for(state="visible", timeout=5_000)
+            await send_btn.first.wait_for(state="visible", timeout=3_000)  # Уменьшили с 5000 до 3000
             await send_btn.first.scroll_into_view_if_needed()
             await send_btn.first.click()
             try:
-                await self.page.wait_for_load_state("networkidle", timeout=3_000)
+                await self.page.wait_for_load_state("networkidle", timeout=2_000)  # Уменьшили с 3000 до 2000
             except Exception:
                 pass
         except Exception:
@@ -494,7 +504,7 @@ class ThumbTackBot:
             await self.page.goto(f"{SETTINGS.base_url}/pro-inbox/", timeout=10000)
         
         # Ждем появления тредов (это значит что страница готова)
-        await self.page.wait_for_selector("a[href^='/pro-inbox/messages/']", timeout=20000)  # Увеличили до 20000ms
+        await self.page.wait_for_selector("a[href^='/pro-inbox/messages/']", timeout=15000)
     
     
     
@@ -550,25 +560,51 @@ class ThumbTackBot:
     async def _show_and_extract_in_current_thread(self) -> Optional[str]:
         """
         Extracts phone number from current lead details page (right panel).
-        First tries to find visible phone numbers, then clicks "Click to show phone number" button if needed.
-        Returns cleaned phone number (digits and + only) or None if not found.
+        Берем весь HTML и ищем телефон регуляркой - простой подход.
         """
-        
         import re
-        # Небольшая пауза для загрузки телефона
-        await self.page.wait_for_timeout(1000)
         
-        # Ищем tel: ссылки с номером телефона в формате +1234567890 (только цифры)
-        pattern = re.compile(r'href="tel:(\+\d+)"')
+        # Небольшая пауза для загрузки
+        await self.page.wait_for_timeout(600)
+        
+        # Берем весь HTML и ищем телефон регуляркой
         html = await self.page.content()
+        pattern = re.compile(r'href="tel:(\+\d+)"')
         match = pattern.search(html)
+        
         if match:
             phone_number = match.group(1)
             logger.info(f"DEBUG: Found phone number: {phone_number}")
             return phone_number
-        else:
-            logger.warning("DEBUG: Phone number not found")
-            return None
+        
+        # Если не нашли сразу, пытаемся кликнуть кнопку "show phone"
+        logger.info("DEBUG: Phone not found in HTML, trying to click 'show phone' button")
+        try:
+            # Пробуем найти кнопку по классу (самый надежный селектор)
+            show_phone_btn = self.page.locator(SHOW_PHONE_BUTTON_CLASS)
+            count = await show_phone_btn.count()
+            
+            if count == 0:
+                # Пробуем альтернативный селектор
+                show_phone_btn = self.page.locator(SHOW_PHONE_BUTTON)
+                count = await show_phone_btn.count()
+            
+            if count > 0:
+                await show_phone_btn.first.click()
+                await self.page.wait_for_timeout(600)  # Ждем появления телефона
+                
+                # Ищем телефон еще раз после клика
+                html = await self.page.content()
+                match = pattern.search(html)
+                if match:
+                    phone_number = match.group(1)
+                    logger.info(f"DEBUG: Found phone number after clicking button: {phone_number}")
+                    return phone_number
+        except Exception as e:
+            logger.warning(f"DEBUG: Error clicking 'show phone' button: {e}")
+        
+        logger.warning("DEBUG: Phone number not found")
+        return None
 
 
     async def extract_phone(self) -> Optional[str]:
@@ -585,7 +621,7 @@ class ThumbTackBot:
             return None
         
         # Переходим на страницу треда
-        await self.page.goto(f"https://www.thumbtack.com{first_thread_url}")
+        await self.page.goto(f"https://www.thumbtack.com{first_thread_url}", wait_until="domcontentloaded", timeout=8000)
         logger.info(f"DEBUG: Successfully loaded thread page, final URL: {self.page.url}")
         
         # Небольшая пауза для загрузки правой панели

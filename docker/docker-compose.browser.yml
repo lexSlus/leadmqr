@@ -1,0 +1,43 @@
+# docker-compose.yml для browser_service (prod версия)
+version: '3.8'
+
+services:
+  browser_service:
+    build:
+      context: ..
+      dockerfile: browser_service/Dockerfile
+      args:
+        BUILD_MODE: prod
+    container_name: browser_service
+    restart: unless-stopped
+    dns:
+      - 10.64.0.1
+      - 1.1.1.1
+    shm_size: "1gb" # Playwright это любит
+    ports:
+      # Открываем API-порт 8080 для "Рабочих"
+      - "8080:8080"
+    environment:
+      # Папка для сессий (общая с monitor_service)
+      - SESSIONS_DIR=/sessions
+    volumes:
+      # Общий том для сессий (используется также monitor_service)
+      - thumbtack_sessions:/sessions
+    networks:
+      - thumbtack_network
+    # Команда запуска для prod режима
+    command: ["sh", "-c", "xvfb-run -a python -u -m uvicorn browser_service.main:app --host 0.0.0.0 --port 8080 --log-level info --access-log 2>&1"]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  thumbtack_network:
+    external: true
+
+volumes:
+  thumbtack_sessions:
+    external: true
+

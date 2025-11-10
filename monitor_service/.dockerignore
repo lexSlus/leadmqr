@@ -1,0 +1,14 @@
+# .dockerignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+*.egg-info/
+.git/
+*.log
+farm_sessions/
+*.json
+

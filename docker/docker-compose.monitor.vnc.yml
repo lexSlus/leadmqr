@@ -1,0 +1,94 @@
+# docker-compose.yml для monitor_service (VNC версия для отладки)
+version: '3.8'
+
+services:
+  monitor_service:
+    build:
+      context: ..
+      dockerfile: monitor_service/Dockerfile
+      args:
+        BUILD_MODE: vnc
+    container_name: monitor_service
+    restart: unless-stopped
+    ports:
+      # VNC порты (для отладки) - разные порты чтобы не конфликтовать с browser_service
+      - "5901:5900" # VNC сервер
+      - "6081:6080" # noVNC веб-интерфейс
+    environment:
+      # RabbitMQ
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672//
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+
+      # Celery
+      - CELERY_QUEUE_NAME=new_leads
+      - MONITOR_TASK_NAME=tasks.process_new_lead
+
+      # PostgreSQL (основной источник аккаунтов)
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-thumbtack}:${POSTGRES_PASSWORD:-thumbtack}@postgres:5432/${POSTGRES_DB:-thumbtack}
+
+      # Fallback: переменные окружения (если БД недоступна)
+      - TT_EMAIL=${TT_EMAIL:-}
+      - TT_PASSWORD=${TT_PASSWORD:-}
+      - TT_ACCOUNT_ID=${TT_ACCOUNT_ID:-}
+
+      # Thumbtack настройки
+      - TT_BASE_URL=https://www.thumbtack.com
+      - TT_POLL_INTERVAL_SEC=3
+      - TT_RESTART_INTERVAL_SEC=10800
+      - TT_HEADLESS=False # В режиме VNC всегда headless=False
+      - TT_SLOW_MO=100
+
+      # Папка для сессий (общая с browser_service)
+      - MONITOR_SESSIONS_DIR=/sessions
+
+      # Логирование
+      - LOG_LEVEL=INFO
+    volumes:
+      # Общий том для сессий (используется также browser_service)
+      - thumbtack_sessions:/sessions
+    depends_on:
+      - rabbitmq
+      - postgres
+    networks:
+      - thumbtack_network
+    # Команда запуска для VNC режима (использует start_with_vnc.sh)
+    command: [ "/start_with_vnc.sh" ]
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-thumbtack}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-thumbtack}
+      - POSTGRES_DB=${POSTGRES_DB:-thumbtack}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - thumbtack_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-thumbtack}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - thumbtack_network
+
+volumes:
+  thumbtack_sessions:
+    external: true
+  postgres_data:
+
+
+networks:
+  thumbtack_network:
+    external: true
